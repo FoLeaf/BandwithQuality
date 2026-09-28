@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -16,6 +16,8 @@ interface SpeedGaugeProps {
   label?: string
   size?: number
   className?: string
+  /** 传入时居中显示该内容（如开始按钮），并淡出指针与数字 */
+  center?: React.ReactNode
 }
 
 function polar(cx: number, cy: number, r: number, deg: number) {
@@ -47,17 +49,26 @@ function fmtLive(v: number): string {
   return v.toFixed(v >= 100 ? 1 : 2)
 }
 
-/** 实时速率仪表盘：进度弧 + 指针 + 中心大数字（浅色主题） */
-export function SpeedGauge({ value, phase, label, size = 280, className }: SpeedGaugeProps) {
+/** 实时速率仪表盘：进度弧 + 指针 + 中心数字；center 插槽用于空闲态放开始按钮 */
+export function SpeedGauge({ value, phase, label, size = 280, className, center }: SpeedGaugeProps) {
   const frac = useMemo(() => valueToFraction(value), [value])
   const angle = START_ANGLE + frac * SWEEP
   const isUp = phase?.startsWith("up")
   const arcColor = isUp ? "var(--chart-2)" : "var(--chart-1)"
 
+  // center 消失后保留最近一次内容 300ms，让淡出动画播完
+  const [lastCenter, setLastCenter] = useState(center)
+  useEffect(() => {
+    if (center != null) setLastCenter(center)
+  }, [center])
+  const hasCenter = center != null
+
   const cx = 120
   const cy = 112
   const r = 88
   const rLabel = 62
+  // 指针/数字与中心插件的交叉淡入淡出
+  const readoutOpacity = hasCenter ? 0 : 1
 
   return (
     <div className={cn("relative select-none", className)} style={{ width: size }}>
@@ -94,23 +105,27 @@ export function SpeedGauge({ value, phase, label, size = 280, className }: Speed
             </text>
           )
         })}
-        {/* 指针（绕轴心旋转，CSS 过渡平滑） */}
+        {/* 指针（绕轴心旋转，淡出给中心插件让位） */}
         <g
           style={{
             transform: `rotate(${angle}deg)`,
             transformOrigin: `${cx}px ${cy}px`,
-            transition: "transform 300ms cubic-bezier(0.4, 0, 0.2, 1)",
+            transition: "transform 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 300ms ease",
+            opacity: readoutOpacity,
           }}
         >
           <line x1={cx - 18} y1={cy} x2={cx + r - 26} y2={cy} stroke="var(--foreground)" strokeWidth={3.5} strokeLinecap="round" />
           <line x1={cx - 18} y1={cy} x2={cx + 18} y2={cy} stroke="var(--foreground)" strokeWidth={7} strokeLinecap="round" />
         </g>
-        <circle cx={cx} cy={cy} r={6.5} fill="var(--foreground)" />
-        <circle cx={cx} cy={cy} r={2.5} fill="var(--background)" />
+        <circle cx={cx} cy={cy} r={6.5} fill="var(--foreground)" style={{ opacity: readoutOpacity, transition: "opacity 300ms ease" }} />
+        <circle cx={cx} cy={cy} r={2.5} fill="var(--background)" style={{ opacity: readoutOpacity, transition: "opacity 300ms ease" }} />
       </svg>
 
       {/* 中心实时数字 */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-1 flex flex-col items-center">
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-1 flex flex-col items-center"
+        style={{ opacity: readoutOpacity, transform: hasCenter ? "translateY(8px)" : "translateY(0)", transition: "opacity 300ms ease, transform 300ms ease" }}
+      >
         <div className="flex items-end gap-1">
           <span className="text-foreground tabular text-4xl leading-none font-semibold tracking-tight">{fmtLive(value)}</span>
         </div>
@@ -120,6 +135,20 @@ export function SpeedGauge({ value, phase, label, size = 280, className }: Speed
         </div>
         {label && <div className="text-muted-foreground mt-0.5 text-xs">{label}</div>}
       </div>
+
+      {/* 中心插槽（开始按钮等）：保持挂载以播放进出场动画 */}
+      {lastCenter != null && (
+        <div
+          className={cn("absolute inset-0 flex items-center justify-center", !hasCenter && "pointer-events-none")}
+          style={{
+            opacity: hasCenter ? 1 : 0,
+            transform: hasCenter ? "scale(1)" : "scale(0.6)",
+            transition: "opacity 300ms ease, transform 300ms cubic-bezier(0.34, 1.4, 0.64, 1)",
+          }}
+        >
+          {lastCenter}
+        </div>
+      )}
     </div>
   )
 }

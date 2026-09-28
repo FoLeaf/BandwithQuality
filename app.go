@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -83,8 +84,23 @@ func (a *App) StartTest(opts engine.Options) (*engine.TestResult, error) {
 	}
 	res, err := engine.RunTest(ctx, opts, cb)
 	if err != nil {
-		wailsruntime.EventsEmit(a.ctx, "bq:error", err.Error())
+		msg := err.Error()
+		if errors.Is(err, context.Canceled) {
+			msg = "测速已取消"
+		}
+		wailsruntime.EventsEmit(a.ctx, "bq:error", msg)
 		return nil, err
+	}
+	// 全部地址族都没有产出（节点排队/列表全失败）→ 按失败处理，不写历史
+	if !resultHasData(res) {
+		msg := "测速失败"
+		for _, f := range res.Families {
+			if f.Error != "" {
+				msg += "：" + f.Family + " " + f.Error
+			}
+		}
+		wailsruntime.EventsEmit(a.ctx, "bq:error", msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
 	if a.store != nil {
 		if serr := a.store.SaveTest(res); serr != nil {
@@ -93,6 +109,16 @@ func (a *App) StartTest(opts engine.Options) (*engine.TestResult, error) {
 	}
 	wailsruntime.EventsEmit(a.ctx, "bq:finished", res)
 	return res, nil
+}
+
+// resultHasData 至少一个地址族测出了阶段数据。
+func resultHasData(r *engine.TestResult) bool {
+	for _, f := range r.Families {
+		if len(f.Phases) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // StopTest 取消当前测速。
