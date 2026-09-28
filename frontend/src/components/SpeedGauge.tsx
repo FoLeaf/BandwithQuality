@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -7,8 +7,50 @@ const STOPS = [0, 5, 10, 50, 100, 250, 500, 750, 1000]
 const START_ANGLE = 135 // 底部左侧
 const SWEEP = 270 // 顺时针扫过角度
 
+// 仪表追赶动画参数：目标值按采样间隔（500ms）才来一次，显示值在 rAF 里
+// 逐帧向目标做指数逼近，帧率无关的非线性缓动，采样间隙里也有连续运动。
+const TAU_UP = 220 // ms，上行追赶时间常数：起步快、收尾缓
+const TAU_DOWN = 140 // ms，下行回摆更快，换相/归零不拖泥带水
+const SNAP = 0.01 // Mbps，差距小于此视为到位，停帧省电
+
+function useSmoothedValue(target: number): number {
+  const [display, setDisplay] = useState(target)
+  const displayRef = useRef(target)
+  const targetRef = useRef(target)
+
+  useEffect(() => {
+    targetRef.current = target
+    const gap = Math.abs(target - displayRef.current)
+    if (gap <= SNAP) {
+      if (gap > 0) {
+        displayRef.current = target
+        setDisplay(target)
+      }
+      return
+    }
+    let raf = 0
+    let last = 0
+    const step = (now: number) => {
+      // 后台标签页恢复时 dt 可能很大，钳制避免指针暴冲
+      const dt = last ? Math.min(now - last, 100) : 16.7
+      last = now
+      const t = targetRef.current
+      let d = displayRef.current
+      d += (t - d) * (1 - Math.exp(-dt / (t < d ? TAU_DOWN : TAU_UP)))
+      if (Math.abs(t - d) <= SNAP) d = t
+      displayRef.current = d
+      setDisplay(d)
+      if (d !== t) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [target])
+
+  return display
+}
+
 interface SpeedGaugeProps {
-  /** 当前速率 Mbps */
+  /** 目标速率 Mbps（最新采样值），显示值会平滑追赶 */
   value: number
   /** down_* / up_*，决定进度弧与图标颜色 */
   phase?: string
@@ -49,9 +91,10 @@ function fmtLive(v: number): string {
   return v.toFixed(v >= 100 ? 1 : 2)
 }
 
-/** 实时速率仪表盘：进度弧 + 指针 + 中心数字；center 插槽用于空闲态放开始按钮 */
+/** 实时速率仪表盘：进度弧 + 指针 + 中心数字（rAF 平滑追赶）；center 插槽用于空闲态放开始按钮 */
 export function SpeedGauge({ value, phase, label, size = 280, className, center }: SpeedGaugeProps) {
-  const frac = useMemo(() => valueToFraction(value), [value])
+  const display = useSmoothedValue(value)
+  const frac = valueToFraction(display)
   const angle = START_ANGLE + frac * SWEEP
   const isUp = phase?.startsWith("up")
   const arcColor = isUp ? "var(--chart-2)" : "var(--chart-1)"
@@ -75,17 +118,9 @@ export function SpeedGauge({ value, phase, label, size = 280, className, center 
       <svg viewBox="0 0 240 205" width={size} className="overflow-visible">
         {/* 轨道 */}
         <path d={arcPath(cx, cy, r, START_ANGLE, START_ANGLE + SWEEP)} fill="none" stroke="var(--muted)" strokeWidth={14} strokeLinecap="round" />
-        {/* 进度弧 */}
+        {/* 进度弧（角度由 rAF 逐帧驱动，不用 CSS transition） */}
         {frac > 0.001 && (
-          <path
-            d={arcPath(cx, cy, r, START_ANGLE, angle)}
-            fill="none"
-            stroke={arcColor}
-            strokeWidth={14}
-            strokeLinecap="round"
-            className="transition-all duration-300 ease-out"
-            style={{ opacity: 0.9 }}
-          />
+          <path d={arcPath(cx, cy, r, START_ANGLE, angle)} fill="none" stroke={arcColor} strokeWidth={14} strokeLinecap="round" style={{ opacity: 0.9 }} />
         )}
         {/* 刻度 */}
         {STOPS.map((s, i) => {
@@ -105,13 +140,13 @@ export function SpeedGauge({ value, phase, label, size = 280, className, center 
             </text>
           )
         })}
-        {/* 指针（绕轴心旋转，淡出给中心插件让位） */}
+        {/* 指针（绕轴心旋转，角度由 rAF 逐帧驱动；仅淡出保留过渡） */}
         <g
           style={{
             transform: `rotate(${angle}deg)`,
             transformOrigin: `${cx}px ${cy}px`,
-            transition: "transform 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 300ms ease",
             opacity: readoutOpacity,
+            transition: "opacity 300ms ease",
           }}
         >
           <line x1={cx - 18} y1={cy} x2={cx + r - 26} y2={cy} stroke="var(--foreground)" strokeWidth={3.5} strokeLinecap="round" />
@@ -121,13 +156,13 @@ export function SpeedGauge({ value, phase, label, size = 280, className, center 
         <circle cx={cx} cy={cy} r={2.5} fill="var(--background)" style={{ opacity: readoutOpacity, transition: "opacity 300ms ease" }} />
       </svg>
 
-      {/* 中心实时数字 */}
+      {/* 中心实时数字（跟随平滑值逐帧计数） */}
       <div
         className="pointer-events-none absolute inset-x-0 bottom-1 flex flex-col items-center"
         style={{ opacity: readoutOpacity, transform: hasCenter ? "translateY(8px)" : "translateY(0)", transition: "opacity 300ms ease, transform 300ms ease" }}
       >
         <div className="flex items-end gap-1">
-          <span className="text-foreground tabular text-4xl leading-none font-semibold tracking-tight">{fmtLive(value)}</span>
+          <span className="text-foreground tabular text-4xl leading-none font-semibold tracking-tight">{fmtLive(display)}</span>
         </div>
         <div className="mt-1 flex items-center gap-1 text-xs" style={{ color: arcColor }}>
           {isUp ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
