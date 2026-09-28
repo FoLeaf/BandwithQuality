@@ -45,6 +45,13 @@ export function inWails(): boolean {
   return !!(window as any)?.go?.main?.App
 }
 
+// ---------- 窗口控制（无边框自绘标题栏用） ----------
+
+export const windowMinimise = (): void => rt().WindowMinimise()
+export const windowToggleMaximise = (): void => rt().WindowToggleMaximise()
+export const windowIsMaximised = (): boolean => !!rt().WindowIsMaximised()
+export const quitApp = (): void => rt().Quit()
+
 // ---------- 绑定方法 ----------
 
 export const getLocation = (): Promise<ClientLocation> => go().GetLocation()

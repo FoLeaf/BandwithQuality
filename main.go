@@ -26,6 +26,8 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 250, G: 250, B: 249, A: 1},
 		OnStartup:        app.startup,
+		// 去掉原生标题栏，由前端自绘（拖拽区 + 窗口控制按钮）
+		Frameless: true,
 		Bind: []interface{}{
 			app,
 		},
