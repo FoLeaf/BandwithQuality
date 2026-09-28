@@ -248,9 +248,9 @@ func enqueue(s Node, imei string, bandwidth int) (string, error) {
 	for i := 0; i < 3; i++ {
 		body, err := httpGet(raw, 5*time.Second)
 		if err != nil {
-			last = err.Error()
-			time.Sleep(200 * time.Millisecond)
-			continue
+			// 网络层失败（超时/EOF/拒连）说明节点服务异常：
+			// 立即返回由上层换下一个节点，而不是原地重试浪费时间
+			return "", fmt.Errorf("dovalid 请求失败: %w", err)
 		}
 		body = strings.TrimSpace(body)
 		last = body
