@@ -254,6 +254,13 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 
 			emit(cb, "latency", "测量延迟…", phaseBase+span*0.3)
 			fr.LatencyMS, fr.JitterMS = MeasureLatency(node.HostIP, node.Port)
+			if cb.OnProgress != nil {
+				lat, jit := fr.LatencyMS, fr.JitterMS
+				cb.OnProgress(Progress{
+					Stage: "latency_done", Message: "延迟测量完成",
+					Percent: phaseBase + span*0.35, LatencyMS: &lat, JitterMS: &jit,
+				})
+			}
 
 			for pi, ph := range phases {
 				if ctx.Err() != nil {

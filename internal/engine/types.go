@@ -103,6 +103,9 @@ type Progress struct {
 	Stage   string  `json:"stage"` // probe|nodes|select|latency|phase:<name>|done|error
 	Message string  `json:"message"`
 	Percent float64 `json:"percent"`
+	// LatencyDone 事件附带实测时延/抖动，供前端实时面板即时显示
+	LatencyMS *float64 `json:"latencyMs,omitempty"`
+	JitterMS  *float64 `json:"jitterMs,omitempty"`
 }
 
 // PhaseResult 单个阶段的最终速率（avgTop3 口径，与官方客户端一致）。

@@ -69,7 +69,9 @@ func pingSamples(ip string, count int) []float64 {
 	args = append(args, ip)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(count+2)*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ping", args...).Output()
+	cmd := exec.CommandContext(ctx, "ping", args...)
+	cmd.SysProcAttr = sysProcAttrNoWindow()
+	out, err := cmd.Output()
 	if len(out) > 0 {
 		if ts := parsePingOutput(string(out)); len(ts) > 0 {
 			return ts

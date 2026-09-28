@@ -40,6 +40,8 @@ export interface Progress {
   stage: string
   message: string
   percent: number
+  latencyMs?: number
+  jitterMs?: number
 }
 
 export interface PhaseResult {

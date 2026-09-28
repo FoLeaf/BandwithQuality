@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { NodePickerDialog } from "@/components/NodePickerDialog"
 import { SpeedChart } from "@/components/SpeedChart"
+import { SpeedGauge } from "@/components/SpeedGauge"
 import { StatCard } from "@/components/StatCard"
 import {
   checkIPv6,
@@ -51,6 +52,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
   const [progress, setProgress] = useState<ProgressEvt>({ stage: "", message: "", percent: 0 })
   const [liveSamples, setLiveSamples] = useState<Sample[]>([])
   const [livePhase, setLivePhase] = useState("")
+  const [latencyInfo, setLatencyInfo] = useState<{ latencyMs: number; jitterMs: number } | null>(null)
   const [result, setResult] = useState<TestResult | null>(null)
   const [resultFamily, setResultFamily] = useState("IPv4")
   const runRef = useRef(false)
@@ -70,7 +72,12 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
   // 事件接线
   useEffect(() => {
     if (!inWails()) return
-    onProgress((p) => setProgress(p))
+    onProgress((p) => {
+      setProgress(p)
+      if (p.latencyMs !== undefined) {
+        setLatencyInfo({ latencyMs: p.latencyMs, jitterMs: p.jitterMs ?? 0 })
+      }
+    })
     phaseRef.current = ""
     onSample((s) => {
       if (phaseRef.current !== s.phase) {
@@ -112,6 +119,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
     setResult(null)
     setLiveSamples([])
     setLivePhase("")
+    setLatencyInfo(null)
     setProgress({ stage: "probe", message: "准备测速…", percent: 0 })
     setRun("running")
     runRef.current = true
@@ -140,6 +148,8 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
 
   const nodeShown = pickedNode
   const running = run === "running"
+  const liveSpeed = liveSamples.length > 0 ? Math.max(0, liveSamples[liveSamples.length - 1].speedMbps) : 0
+  const liveColor = livePhase.startsWith("up") ? "var(--chart-2)" : "var(--chart-1)"
 
   // 结果族的展示
   const shownFamily = result?.families.find((f) => f.family === resultFamily) ?? result?.families[0]
@@ -207,16 +217,36 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
         </div>
       </div>
 
-      {/* 实时曲线 */}
+      {/* 实时面板：左仪表盘 + 右趋势图 */}
       {(running || liveSamples.length > 0) && (
         <Card>
           <CardContent className="px-5 py-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium">
               <Activity className="text-primary size-4" />
               实时速率
               <Badge variant="secondary">{PHASE_LABEL[livePhase] ?? "…"}</Badge>
+              {latencyInfo && (
+                <>
+                  <Badge variant="outline" className="tabular gap-1 font-normal">
+                    时延 {fmtMs(latencyInfo.latencyMs)}
+                  </Badge>
+                  <Badge variant="outline" className="tabular gap-1 font-normal">
+                    抖动 {fmtMs(latencyInfo.jitterMs)}
+                  </Badge>
+                </>
+              )}
             </div>
-            <SpeedChart samples={liveSamples} height={200} />
+            <div className="grid items-center gap-4 lg:grid-cols-[300px_1fr]">
+              <SpeedGauge
+                value={liveSpeed}
+                phase={livePhase}
+                label={PHASE_LABEL[livePhase] ?? "准备中"}
+                className="justify-self-center"
+              />
+              <div className="w-full">
+                <SpeedChart samples={liveSamples} height={250} color={liveColor} />
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

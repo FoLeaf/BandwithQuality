@@ -1,0 +1,125 @@
+import { useMemo } from "react"
+import { ArrowDown, ArrowUp } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+/** speedtest.net 式非线性刻度：各档位在弧上均匀分布 */
+const STOPS = [0, 5, 10, 50, 100, 250, 500, 750, 1000]
+const START_ANGLE = 135 // 底部左侧
+const SWEEP = 270 // 顺时针扫过角度
+
+interface SpeedGaugeProps {
+  /** 当前速率 Mbps */
+  value: number
+  /** down_* / up_*，决定进度弧与图标颜色 */
+  phase?: string
+  /** 仪表盘下方阶段名（空则不显示） */
+  label?: string
+  size?: number
+  className?: string
+}
+
+function polar(cx: number, cy: number, r: number, deg: number) {
+  const rad = (deg * Math.PI) / 180
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
+}
+
+function arcPath(cx: number, cy: number, r: number, a0: number, a1: number) {
+  const s = polar(cx, cy, r, a0)
+  const e = polar(cx, cy, r, a1)
+  const large = a1 - a0 > 180 ? 1 : 0
+  return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`
+}
+
+/** 值 → 弧上位置比例（分段线性插值，超过上限钳制） */
+export function valueToFraction(v: number): number {
+  const c = Math.max(0, Math.min(v, STOPS[STOPS.length - 1]))
+  for (let i = 1; i < STOPS.length; i++) {
+    if (c <= STOPS[i]) {
+      const seg = (c - STOPS[i - 1]) / (STOPS[i] - STOPS[i - 1])
+      return (i - 1 + seg) / (STOPS.length - 1)
+    }
+  }
+  return 1
+}
+
+function fmtLive(v: number): string {
+  if (v >= 1000) return (v / 1000).toFixed(2)
+  return v.toFixed(v >= 100 ? 1 : 2)
+}
+
+/** 实时速率仪表盘：进度弧 + 指针 + 中心大数字（浅色主题） */
+export function SpeedGauge({ value, phase, label, size = 280, className }: SpeedGaugeProps) {
+  const frac = useMemo(() => valueToFraction(value), [value])
+  const angle = START_ANGLE + frac * SWEEP
+  const isUp = phase?.startsWith("up")
+  const arcColor = isUp ? "var(--chart-2)" : "var(--chart-1)"
+
+  const cx = 120
+  const cy = 112
+  const r = 88
+  const rLabel = 62
+
+  return (
+    <div className={cn("relative select-none", className)} style={{ width: size }}>
+      <svg viewBox="0 0 240 205" width={size} className="overflow-visible">
+        {/* 轨道 */}
+        <path d={arcPath(cx, cy, r, START_ANGLE, START_ANGLE + SWEEP)} fill="none" stroke="var(--muted)" strokeWidth={14} strokeLinecap="round" />
+        {/* 进度弧 */}
+        {frac > 0.001 && (
+          <path
+            d={arcPath(cx, cy, r, START_ANGLE, angle)}
+            fill="none"
+            stroke={arcColor}
+            strokeWidth={14}
+            strokeLinecap="round"
+            className="transition-all duration-300 ease-out"
+            style={{ opacity: 0.9 }}
+          />
+        )}
+        {/* 刻度 */}
+        {STOPS.map((s, i) => {
+          const a = START_ANGLE + (i / (STOPS.length - 1)) * SWEEP
+          const p = polar(cx, cy, rLabel, a)
+          return (
+            <text
+              key={s}
+              x={p.x}
+              y={p.y + 4}
+              textAnchor="middle"
+              fontSize={11}
+              fill={s <= 10 ? "var(--foreground)" : "var(--muted-foreground)"}
+              fontWeight={s <= 10 ? 600 : 400}
+            >
+              {s}
+            </text>
+          )
+        })}
+        {/* 指针（绕轴心旋转，CSS 过渡平滑） */}
+        <g
+          style={{
+            transform: `rotate(${angle}deg)`,
+            transformOrigin: `${cx}px ${cy}px`,
+            transition: "transform 300ms cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        >
+          <line x1={cx - 18} y1={cy} x2={cx + r - 26} y2={cy} stroke="var(--foreground)" strokeWidth={3.5} strokeLinecap="round" />
+          <line x1={cx - 18} y1={cy} x2={cx + 18} y2={cy} stroke="var(--foreground)" strokeWidth={7} strokeLinecap="round" />
+        </g>
+        <circle cx={cx} cy={cy} r={6.5} fill="var(--foreground)" />
+        <circle cx={cx} cy={cy} r={2.5} fill="var(--background)" />
+      </svg>
+
+      {/* 中心实时数字 */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-1 flex flex-col items-center">
+        <div className="flex items-end gap-1">
+          <span className="text-foreground tabular text-4xl leading-none font-semibold tracking-tight">{fmtLive(value)}</span>
+        </div>
+        <div className="mt-1 flex items-center gap-1 text-xs" style={{ color: arcColor }}>
+          {isUp ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
+          <span>Mbps</span>
+        </div>
+        {label && <div className="text-muted-foreground mt-0.5 text-xs">{label}</div>}
+      </div>
+    </div>
+  )
+}
