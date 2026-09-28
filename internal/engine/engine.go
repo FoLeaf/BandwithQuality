@@ -1,0 +1,264 @@
+package engine
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+)
+
+// 控制面 base 与出口探测结果的进程级缓存（Wails 一次启动只探测一次）。
+var (
+	probeMu   sync.Mutex
+	probeBase string
+	probeLoc  ClientLocation
+)
+
+// Probe 探测出口网络（复用缓存；force=true 时强制重新探测）。
+func Probe(force bool) (ClientLocation, error) {
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	if !force && probeBase != "" {
+		return probeLoc, nil
+	}
+	base, info, err := fetchClient()
+	if err != nil {
+		return ClientLocation{}, err
+	}
+	probeBase = base
+	probeLoc = info.location()
+	return probeLoc, nil
+}
+
+func controlBase() (string, ClientLocation, error) {
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	if probeBase == "" {
+		base, info, err := fetchClient()
+		if err != nil {
+			return "", ClientLocation{}, err
+		}
+		probeBase = base
+		probeLoc = info.location()
+	}
+	return probeBase, probeLoc, nil
+}
+
+// ListNodes 拉取候选节点列表（手动选点用）。
+// opt 为空的字段回退到探测到的出口位置；指定省份而未指定城市时用省会兜底。
+func ListNodes(opt ListOptions) ([]Node, error) {
+	_, loc, err := controlBase()
+	if err != nil {
+		return nil, err
+	}
+	prov, city, oper := loc.Province, loc.City, loc.Oper
+	if opt.Province != "" {
+		if p, _, err := resolveLocation(opt.Province); err == nil {
+			prov = p
+		} else {
+			prov = opt.Province
+		}
+		if opt.City == "" {
+			if cap := CapitalOf(prov); cap != "" {
+				city = cap
+			}
+		}
+	}
+	if opt.City != "" {
+		if _, c, err := resolveLocation(opt.City); err == nil {
+			city = c
+		} else {
+			city = opt.City
+		}
+	}
+	if opt.Oper != "" {
+		oper = opt.Oper
+	}
+	nodes, err := matchServersByLoc(prov, city, oper, opt.IPv6)
+	if err != nil {
+		return nil, err
+	}
+	if !opt.NoPing {
+		FillQuickPing(nodes)
+	}
+	return nodes, nil
+}
+
+// ListOptions 手动选点列表的过滤参数。
+type ListOptions struct {
+	Province string `json:"province"` // 空 = 出口省份
+	City     string `json:"city"`     // 空 = 省会（若指定了省份）
+	Oper     string `json:"oper"`     // 空 = 出口运营商
+	IPv6     bool   `json:"ipv6"`
+	NoPing   bool   `json:"noPing"` // 跳过列表快速 ping
+}
+
+func matchServersByLoc(prov, city, oper string, ipv6 bool) ([]Node, error) {
+	base, loc, err := controlBase()
+	if err != nil {
+		return nil, err
+	}
+	return matchServers(base, loc.IP, prov, city, oper, ipv6)
+}
+
+// AutoSelect 按上游三级回退自动选一个节点（不排队）。
+func AutoSelect(opt ListOptions) (*Node, []Node, error) {
+	nodes, err := ListNodes(opt)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(nodes) == 0 {
+		return nil, nodes, fmt.Errorf("无可用节点")
+	}
+	_, loc, _ := controlBase()
+	prov, city, oper := loc.Province, loc.City, loc.Oper
+	if opt.Province != "" {
+		prov = opt.Province
+	}
+	if opt.City != "" {
+		city = opt.City
+	}
+	if opt.Oper != "" {
+		oper = opt.Oper
+	}
+	return pickNode(nodes, prov, city, oper, tcpOK), nodes, nil
+}
+
+// PingNode 按需测单个节点的时延/抖动（手动选点刷新）。
+func PingNode(n Node) (avgMs, jitterMs float64) {
+	return MeasureLatency(n.HostIP, n.Port)
+}
+
+// makeIMEI 每次测速生成随机设备标识（上游做法）。
+func makeIMEI() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return "TS" + strings.ToUpper(hex.EncodeToString(b))
+}
+
+func emit(cb Callbacks, stage, msg string, pct float64) {
+	if cb.OnProgress != nil {
+		cb.OnProgress(Progress{Stage: stage, Message: msg, Percent: pct})
+	}
+}
+
+// RunTest 执行一次完整测速：出口探测 → 选点 → 排队 → 时延 → 各阶段吞吐 → 退队。
+// opts.Node 非 nil 时 IPv4 轮使用该节点（IPv6 轮仍自动择优）；
+// opts.IPv6 且网络具备 v6 互联网时附加一轮 IPv6。
+// 通过 cb.OnProgress / cb.OnSample 实时推送进度与采样点。
+func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, error) {
+	opts.fill()
+	base, loc, err := controlBase()
+	if err != nil {
+		return nil, err
+	}
+	emit(cb, "probe", fmt.Sprintf("出口：%s %s %s（%s）", loc.Province, loc.City, loc.Oper, loc.IP), 4)
+
+	type fam struct {
+		name string
+		v6   bool
+	}
+	fams := []fam{{FamilyIPv4, false}}
+	if opts.IPv6 {
+		emit(cb, "probe", "检测 IPv6 可用性…", 6)
+		if HasIPv6Internet() {
+			fams = append(fams, fam{FamilyIPv6, true})
+			emit(cb, "probe", "IPv6 可用，将附加一轮 IPv6 测试", 8)
+		} else {
+			emit(cb, "probe", "IPv6 不可用，仅测 IPv4", 8)
+		}
+	}
+
+	result := &TestResult{Client: loc, StartedAt: time.Now()}
+	defer func() { result.DurationS = time.Since(result.StartedAt).Seconds() }()
+
+	imei := makeIMEI()
+	phases := phaseList(opts.Mode)
+	span := 100.0 / float64(len(fams)*len(phases))
+
+	for fi, f := range fams {
+		result.Families = append(result.Families, FamilyResult{Family: f.name})
+		fr := &result.Families[fi]
+		phaseBase := float64(fi) * span * float64(len(phases))
+
+		var node *Node
+		if fi == 0 && opts.Node != nil {
+			node = opts.Node
+		} else {
+			emit(cb, "nodes", "获取节点列表…", phaseBase+span*0.1)
+			nodes, err := matchServers(base, loc.IP, loc.Province, loc.City, loc.Oper, f.v6)
+			if err != nil {
+				fr.Error = err.Error()
+				continue
+			}
+			if len(nodes) == 0 {
+				fr.Error = "无可用节点"
+				continue
+			}
+			node = pickNode(nodes, loc.Province, loc.City, loc.Oper, tcpOK)
+		}
+		fr.Node = node
+		emit(cb, "select", fmt.Sprintf("为你选择了：%s ×%s", node.DisplayName(), shortIP(node.HostIP)), phaseBase+span*0.2)
+
+		uuid, err := enqueue(*node, imei, 200)
+		if err != nil {
+			fr.Error = err.Error()
+			continue
+		}
+		func() {
+			defer dequeue(*node, uuid)
+
+			emit(cb, "latency", "测量延迟…", phaseBase+span*0.3)
+			fr.LatencyMS, fr.JitterMS = MeasureLatency(node.HostIP, node.Port)
+
+			for pi, ph := range phases {
+				if ctx.Err() != nil {
+					fr.Error = ctx.Err().Error()
+					return
+				}
+				threads, down := opts.UpThreads, false
+				switch ph {
+				case PhaseDownSingle:
+					threads, down = 1, true
+				case PhaseUpSingle:
+					threads, down = 1, false
+				case PhaseDownMulti:
+					threads, down = opts.DownThreads, true
+				}
+				stage := "phase:" + ph
+				emit(cb, stage, PhaseLabel(ph, f.name), phaseBase+span*(float64(pi)+0.35))
+				mbps := runPhase(ctx, *node, uuid, down, threads, opts.LengthS, opts.IntervalMS,
+					func(index, total int, speed, elapsed float64) {
+						s := Sample{Family: f.name, Phase: ph, Index: index, ElapsedS: elapsed, SpeedMbps: speed}
+						fr.Samples = append(fr.Samples, s)
+						if cb.OnSample != nil {
+							cb.OnSample(s)
+						}
+					})
+				fr.Phases = append(fr.Phases, PhaseResult{Phase: ph, Mbps: mbps})
+				emit(cb, stage, PhaseLabel(ph, f.name)+"完成", phaseBase+span*float64(pi+1))
+			}
+		}()
+		if ctx.Err() != nil {
+			emit(cb, "error", "测速已取消", 100)
+			return result, ctx.Err()
+		}
+	}
+	emit(cb, "done", "测速完成", 100)
+	return result, nil
+}
+
+// shortIP 隐藏 IP 中段，展示友好（1.2.x.x）。
+func shortIP(ip string) string {
+	if strings.Contains(ip, ":") {
+		return ip // v6 不截
+	}
+	parts := strings.Split(ip, ".")
+	if len(parts) == 4 {
+		return parts[0] + "." + parts[1] + ".*.*"
+	}
+	return ip
+}
