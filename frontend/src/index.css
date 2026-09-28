@@ -1,0 +1,107 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.002 95);
+  --foreground: oklch(0.23 0.014 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.23 0.014 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.23 0.014 260);
+  /* 品牌色：泰尔测速官方结果图的青绿 #75b8a6 → 深化为主的 teal */
+  --primary: oklch(0.51 0.088 186);
+  --primary-foreground: oklch(0.985 0.002 95);
+  --secondary: oklch(0.955 0.006 170);
+  --secondary-foreground: oklch(0.35 0.03 186);
+  --muted: oklch(0.955 0.004 95);
+  --muted-foreground: oklch(0.52 0.012 260);
+  --accent: oklch(0.94 0.015 175);
+  --accent-foreground: oklch(0.35 0.03 186);
+  --destructive: oklch(0.58 0.22 27);
+  --destructive-foreground: oklch(0.985 0.002 95);
+  --border: oklch(0.91 0.006 95);
+  --input: oklch(0.88 0.006 95);
+  --ring: oklch(0.6 0.09 186);
+  --chart-1: oklch(0.55 0.1 195);
+  --chart-2: oklch(0.64 0.13 45);
+  --chart-3: oklch(0.6 0.11 150);
+  --chart-4: oklch(0.68 0.12 280);
+  --chart-5: oklch(0.72 0.14 60);
+  --success: oklch(0.63 0.15 150);
+}
+
+.dark {
+  --background: oklch(0.2 0.012 260);
+  --foreground: oklch(0.96 0.002 95);
+  --card: oklch(0.25 0.014 260);
+  --card-foreground: oklch(0.96 0.002 95);
+  --popover: oklch(0.25 0.014 260);
+  --popover-foreground: oklch(0.96 0.002 95);
+  --primary: oklch(0.72 0.1 178);
+  --primary-foreground: oklch(0.2 0.02 200);
+  --secondary: oklch(0.32 0.015 260);
+  --secondary-foreground: oklch(0.96 0.002 95);
+  --muted: oklch(0.32 0.015 260);
+  --muted-foreground: oklch(0.68 0.01 260);
+  --accent: oklch(0.34 0.02 190);
+  --accent-foreground: oklch(0.96 0.002 95);
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.97 0.002 95);
+  --border: oklch(0.34 0.01 260);
+  --input: oklch(0.36 0.01 260);
+  --ring: oklch(0.55 0.08 186);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-success: var(--success);
+  --font-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+}
+
+/* 数字大卡片里的数字字体 */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

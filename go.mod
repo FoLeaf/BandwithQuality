@@ -2,6 +2,8 @@ module bandwidthquality
 
 go 1.25.0
 
+toolchain go1.26.8
+
 require (
 	github.com/wailsapp/wails/v2 v2.10.2
 	modernc.org/sqlite v1.59.0

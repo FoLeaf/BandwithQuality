@@ -145,6 +145,41 @@ func emit(cb Callbacks, stage, msg string, pct float64) {
 	}
 }
 
+// enqueueWithFallback 首选节点排队；dovalid 超时/拒绝时自动换下一个 TCP 可达节点
+// （至多再试 2 个）。手动指定节点时 nodes 为空，只按上游的 3 次内部重试。
+func enqueueWithFallback(ctx context.Context, nodes []Node, primary *Node, imei string) (string, *Node, error) {
+	tried := []*Node{primary}
+	if primary != nil {
+		for i := range nodes {
+			n := &nodes[i]
+			if n.HostIP == primary.HostIP && n.Port == primary.Port {
+				continue
+			}
+			if len(tried) >= 3 {
+				break
+			}
+			if tcpOK(n.HostIP, n.Port) {
+				tried = append(tried, n)
+			}
+		}
+	}
+	var lastErr error
+	for _, n := range tried {
+		if n == nil {
+			continue
+		}
+		if ctx.Err() != nil {
+			return "", nil, ctx.Err()
+		}
+		uuid, err := enqueue(*n, imei, 200)
+		if err == nil {
+			return uuid, n, nil
+		}
+		lastErr = err
+	}
+	return "", nil, lastErr
+}
+
 // RunTest 执行一次完整测速：出口探测 → 选点 → 排队 → 时延 → 各阶段吞吐 → 退队。
 // opts.Node 非 nil 时 IPv4 轮使用该节点（IPv6 轮仍自动择优）；
 // opts.IPv6 且网络具备 v6 互联网时附加一轮 IPv6。
@@ -180,16 +215,18 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 	span := 100.0 / float64(len(fams)*len(phases))
 
 	for fi, f := range fams {
-		result.Families = append(result.Families, FamilyResult{Family: f.name})
+		result.Families = append(result.Families, FamilyResult{Family: f.name, LatencyMS: -1})
 		fr := &result.Families[fi]
 		phaseBase := float64(fi) * span * float64(len(phases))
 
+		var nodes []Node
 		var node *Node
 		if fi == 0 && opts.Node != nil {
 			node = opts.Node
 		} else {
 			emit(cb, "nodes", "获取节点列表…", phaseBase+span*0.1)
-			nodes, err := matchServers(base, loc.IP, loc.Province, loc.City, loc.Oper, f.v6)
+			var err error
+			nodes, err = matchServers(base, loc.IP, loc.Province, loc.City, loc.Oper, f.v6)
 			if err != nil {
 				fr.Error = err.Error()
 				continue
@@ -200,13 +237,17 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 			}
 			node = pickNode(nodes, loc.Province, loc.City, loc.Oper, tcpOK)
 		}
-		fr.Node = node
 		emit(cb, "select", fmt.Sprintf("为你选择了：%s ×%s", node.DisplayName(), shortIP(node.HostIP)), phaseBase+span*0.2)
 
-		uuid, err := enqueue(*node, imei, 200)
+		uuid, chosen, err := enqueueWithFallback(ctx, nodes, node, imei)
 		if err != nil {
 			fr.Error = err.Error()
 			continue
+		}
+		node = chosen
+		fr.Node = node
+		if fi != 0 || opts.Node == nil {
+			emit(cb, "select", fmt.Sprintf("为你选择了：%s ×%s", node.DisplayName(), shortIP(node.HostIP)), phaseBase+span*0.25)
 		}
 		func() {
 			defer dequeue(*node, uuid)
