@@ -1,0 +1,19 @@
+# Build
+build/bin/
+dist/
+frontend/dist/
+frontend/node_modules/
+*.exe
+!build/app.ico
+
+# Go
+vendor/
+*.test
+
+# Wails
+frontend/wailsjs/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
