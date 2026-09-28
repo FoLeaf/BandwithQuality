@@ -17,3 +17,6 @@ frontend/wailsjs/
 .idea/
 .vscode/
 .DS_Store
+
+# ZCode 本地文件
+.zcode/
