@@ -51,6 +51,12 @@ func (a *App) ListNodes(opt engine.ListOptions) ([]engine.Node, error) {
 	return engine.ListNodes(opt)
 }
 
+// AutoSelectNode 首页展示用：预演一次自动选点（三级回退择优，不排队、不全表 ping）。
+func (a *App) AutoSelectNode() (*engine.Node, error) {
+	n, _, err := engine.AutoSelect(engine.ListOptions{NoPing: true})
+	return n, err
+}
+
 // PingNode 单节点时延/抖动测量。
 func (a *App) PingNode(n engine.Node) (float64, float64) {
 	return engine.PingNode(n)

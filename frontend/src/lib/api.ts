@@ -14,7 +14,9 @@ import type {
 } from "./types"
 import {
   devMockActive,
+  mockAutoSelectNode,
   mockCheckIPv6,
+  mockGetHistoryTest,
   mockGetLocation,
   mockGetSettings,
   mockListHistory,
@@ -37,6 +39,7 @@ type GoApp = {
   GetLocation(): Promise<ClientLocation>
   CheckIPv6(): Promise<boolean>
   ListNodes(opt: ListOptions): Promise<Node[] | null>
+  AutoSelectNode(): Promise<Node | null>
   PingNode(n: Node): Promise<number[]>
   StartTest(opts: Options): Promise<TestResult>
   StopTest(): Promise<void>
@@ -78,6 +81,8 @@ export const quitApp = (): void => rt().Quit()
 export const getLocation = (): Promise<ClientLocation> => (MOCK ? mockGetLocation() : go().GetLocation())
 export const checkIPv6 = (): Promise<boolean> => (MOCK ? mockCheckIPv6() : go().CheckIPv6())
 export const listNodes = async (opt: ListOptions): Promise<Node[]> => (MOCK ? await mockListNodes(opt) : (await go().ListNodes(opt)) ?? [])
+export const autoSelectNode = (): Promise<Node | null> =>
+  MOCK ? mockAutoSelectNode() : go().AutoSelectNode().catch(() => null)
 export const pingNode = async (n: Node): Promise<[number, number]> => {
   const r = MOCK ? await mockPingNode() : await go().PingNode(n)
   return [r?.[0] ?? -1, r?.[1] ?? 0]
@@ -86,7 +91,7 @@ export const startTest = (opts: Options): Promise<TestResult> => (MOCK ? mockSta
 export const stopTest = (): Promise<void> => (MOCK ? mockStopTest() : go().StopTest())
 export const listHistory = async (limit = 100): Promise<HistoryRow[]> => (MOCK ? mockListHistory() : (await go().ListHistory(limit)) ?? [])
 export const getHistoryTest = (id: string): Promise<TestResult> =>
-  MOCK ? Promise.reject(new Error("mock 模式不提供历史详情")) : go().GetHistoryTest(id)
+  MOCK ? mockGetHistoryTest(id) : go().GetHistoryTest(id)
 export const deleteHistory = (id: string): Promise<void> => (MOCK ? mockNoop() : go().DeleteHistory(id))
 export const clearHistory = (): Promise<void> => (MOCK ? mockNoop() : go().ClearHistory())
 export const getSettings = async (): Promise<Settings> => {

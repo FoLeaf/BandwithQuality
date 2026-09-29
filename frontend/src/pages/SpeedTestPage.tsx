@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowDown, ArrowUp, ChevronRight, Server, Square, User } from "lucide-react"
+import { ArrowDown, ArrowUp, ChevronRight, Server, User } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -9,6 +9,7 @@ import RubberSegment from "@/components/RubberSegment"
 import { SpeedChart } from "@/components/SpeedChart"
 import { SpeedGauge } from "@/components/SpeedGauge"
 import {
+  autoSelectNode,
   checkIPv6,
   getLocation,
   inWails,
@@ -29,7 +30,7 @@ import type {
   Settings,
   TestResult,
 } from "@/lib/types"
-import { PHASE_LABEL, PHASE_ORDER } from "@/lib/types"
+import { MODE_SHORT, PHASE_LABEL, PHASE_ORDER } from "@/lib/types"
 import { cn, fmtMs, fmtSpeed, speedTone } from "@/lib/utils"
 
 interface SpeedTestPageProps {
@@ -72,7 +73,7 @@ function Collapse({ open, children }: { open: boolean; children: React.ReactNode
   )
 }
 
-/** 数据区大数字卡（下载/上传） */
+/** 数据区大数字卡（下载/上传），结果页与 running 实时区共用 */
 function BigStat({ label, up, mbps }: { label: string; up?: boolean; mbps: number }) {
   const gbps = mbps >= 1000
   const value = mbps < 0 ? "-" : gbps ? (mbps / 1000).toFixed(2) : mbps.toFixed(mbps >= 100 ? 1 : 2)
@@ -83,7 +84,7 @@ function BigStat({ label, up, mbps }: { label: string; up?: boolean; mbps: numbe
           {up ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
           {label}
         </div>
-        <div className={cn("tabular mt-1.5 text-[32px] leading-none font-semibold tracking-tight", speedTone(mbps))}>
+        <div className={cn("tabular mt-1.5 text-[32px] leading-none font-semibold tracking-tight", mbps < 0 ? "text-muted-foreground" : speedTone(mbps))}>
           {value}
           <span className="text-muted-foreground ml-1.5 text-sm font-normal">{gbps ? "Gbps" : "Mbps"}</span>
         </div>
@@ -92,16 +93,88 @@ function BigStat({ label, up, mbps }: { label: string; up?: boolean; mbps: numbe
   )
 }
 
+/**
+ * 出口 + 节点信息簇：两个 logo 分列窗口垂直中线两侧，信息块向中线聚拢。
+ * 出口文字右对齐（朝向自己的 logo），节点文字左对齐；两块首行永远在同一水平线上。
+ */
+function InfoCluster({
+  client,
+  ipv6OK,
+  node,
+  nodeLoading,
+  onSwitch,
+  switchDisabled,
+}: {
+  client: ClientLocation | null
+  ipv6OK: boolean | null
+  node: Node | null
+  nodeLoading?: boolean
+  onSwitch: () => void
+  switchDisabled?: boolean
+}) {
+  return (
+    <div className="flex items-start justify-center gap-3">
+      {/* 出口：文字右对齐 + logo 贴中线 */}
+      <div className="flex items-start gap-2.5">
+        <div className="min-w-0 text-right">
+          <div className="flex items-center justify-end gap-1.5 text-sm font-medium">
+            <span className="truncate">{client ? client.oper || "未知运营商" : "探测中…"}</span>
+            {ipv6OK !== null && (
+              <Badge variant={ipv6OK ? "success" : "secondary"} className="shrink-0 px-1.5 text-[10px]">
+                {ipv6OK ? "IPv6 可用" : "IPv6 不可用"}
+              </Badge>
+            )}
+          </div>
+          <div className="text-muted-foreground truncate text-xs">
+            {client ? `${client.province} ${client.city} · ${client.ip}` : "正在获取出口信息"}
+          </div>
+        </div>
+        <div className="text-muted-foreground border-muted-foreground/30 flex size-9 shrink-0 items-center justify-center rounded-full border">
+          <User className="size-4" />
+        </div>
+      </div>
+      {/* 节点：logo 贴中线 + 文字左对齐（名称 / IP / 切换节点 三行） */}
+      <div className="flex items-start gap-2.5">
+        <div className="text-muted-foreground border-muted-foreground/30 flex size-9 shrink-0 items-center justify-center rounded-full border">
+          <Server className="size-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium">
+            {node
+              ? node.hostName || `${node.city}${node.oper}`
+              : nodeLoading
+                ? "正在选择节点…"
+                : "暂无节点信息"}
+          </div>
+          <div className="text-muted-foreground h-4 truncate text-xs">{node ? node.hostIp : ""}</div>
+          <button
+            type="button"
+            className="text-primary hover:text-primary/80 mt-0.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
+            disabled={switchDisabled}
+            onClick={onSwitch}
+          >
+            切换节点
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTestPageProps) {
   const [location, setLocation] = useState<ClientLocation | null>(null)
   const [ipv6OK, setIpv6OK] = useState<boolean | null>(null)
   const [pickedNode, setPickedNode] = useState<Node | null>(null)
+  const [autoNode, setAutoNode] = useState<Node | null>(null)
+  const [autoNodeLoading, setAutoNodeLoading] = useState(true)
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const [run, setRun] = useState<RunState>("idle")
   const [settled, setSettled] = useState(false) // done 定格（700ms 脉冲）是否结束
   const [progress, setProgress] = useState<ProgressEvt>({ stage: "", message: "", percent: 0 })
-  const [liveSamples, setLiveSamples] = useState<Sample[]>([])
+  const [liveSamples, setLiveSamples] = useState<Sample[]>([]) // 当前相位的采样（gauge 相位切换用）
+  const [liveAll, setLiveAll] = useState<Sample[]>([]) // 本轮全部采样（实时曲线）
+  const [liveDir, setLiveDir] = useState({ down: -1, up: -1 }) // 两个方向的最新瞬时速率
   const [livePhase, setLivePhase] = useState("")
   const [result, setResult] = useState<TestResult | null>(null)
   // 数据区退出动画期间保留的内容副本：result 清空后 Collapse 收起时仍有东西可显示
@@ -115,7 +188,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
   const onFinishedRef = useRef(onFinished)
   onFinishedRef.current = onFinished
 
-  // 出口探测 + IPv6 检测
+  // 出口探测 + IPv6 检测 + 自动选点预览（只读展示，真正的选点仍在测速时进行）
   useEffect(() => {
     if (!inWails()) return
     getLocation()
@@ -124,6 +197,10 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
     checkIPv6()
       .then(setIpv6OK)
       .catch(() => setIpv6OK(null))
+    autoSelectNode()
+      .then(setAutoNode)
+      .catch(() => setAutoNode(null))
+      .finally(() => setAutoNodeLoading(false))
   }, [])
 
   // 事件接线
@@ -134,6 +211,12 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
     })
     phaseRef.current = ""
     onSample((s) => {
+      setLiveAll((arr) => [...arr, s])
+      if (s.phase.startsWith("up")) {
+        setLiveDir((d) => ({ ...d, up: s.speedMbps }))
+      } else {
+        setLiveDir((d) => ({ ...d, down: s.speedMbps }))
+      }
       if (phaseRef.current !== s.phase) {
         phaseRef.current = s.phase
         setLivePhase(s.phase)
@@ -157,6 +240,8 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
       runRef.current = false
       setRun((prev) => (prev === "running" ? "idle" : prev))
       setLiveSamples([])
+      setLiveAll([])
+      setLiveDir({ down: -1, up: -1 })
       setLivePhase("")
       setProgress({ stage: "", message: "", percent: 0 })
       if (msg === "测速已取消") toast.info("测速已取消")
@@ -191,6 +276,8 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
     setCurveOpen(false)
     setResult(null)
     setLiveSamples([])
+    setLiveAll([])
+    setLiveDir({ down: -1, up: -1 })
     setLivePhase("")
     setProgress({ stage: "probe", message: "准备测速…", percent: 0 })
     setRun("running")
@@ -217,12 +304,12 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
     }
   }, [])
 
-  const displayNode = pickedNode ?? result?.families[0]?.node ?? null
   const running = run === "running"
   const liveSpeed = liveSamples.length > 0 ? Math.max(0, liveSamples[liveSamples.length - 1].speedMbps) : 0
-  // 聚焦态：测速中或结束定格期间，只留表盘（GO 已淡出，其余内容全部收起）
-  const focus = running || (run === "done" && !settled)
+  // 定格态：测完 700ms 脉冲期间，只留表盘
   const holding = run === "done" && !settled
+  // 表盘 live 态：测速中 + 结束定格期间保持实时读数（脉冲播完再淡出换 GO）
+  const focusLive = running || holding
   const dataOpen = run === "done" && settled && result != null
 
   const startDisabled = !inWails() || !settings
@@ -232,19 +319,24 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
   const family = settings?.family ?? "both"
 
   return (
-    <div className="space-y-4">
-      {/* 聚焦簇：整个大圆可点（idle=GO），测速中下方挂停止按钮 */}
-      <div className="flex flex-col items-center">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 表盘簇：占满剩余空间使表盘居中，running/done 的下方内容把它顶到合适高度 */}
+      <div className="flex flex-1 flex-col items-center justify-center">
+        {/* 整个大圆可点：单击开始（running 时由 runRef 拦截），双击停止 */}
         <button
           type="button"
-          title="开始测速"
-          disabled={startDisabled || running}
+          title={running ? "双击停止测速" : "开始测速"}
+          disabled={startDisabled}
           onClick={() => void start()}
-          className="group rounded-full outline-none transition-transform duration-200 active:scale-[0.985] disabled:cursor-not-allowed"
+          onDoubleClick={() => running && void stop()}
+          className={cn(
+            "group rounded-full outline-none transition-transform duration-200 active:scale-[0.985] disabled:cursor-not-allowed",
+            running && "cursor-default",
+          )}
         >
           <SpeedGauge
             size={320}
-            live={focus}
+            live={focusLive}
             value={liveSpeed}
             phase={livePhase}
             pulsing={holding}
@@ -252,7 +344,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
               holding ? "测速完成" : running ? `${livePhase ? PHASE_LABEL[livePhase] : progress.message || "准备中"} · ${Math.round(progress.percent)}%` : undefined
             }
             center={
-              focus ? undefined : (
+              focusLive ? undefined : (
                 <div className="flex flex-col items-center transition-transform duration-200 group-enabled:group-hover:scale-105 group-disabled:opacity-50">
                   <span className="text-foreground text-[40px] leading-none font-bold tracking-[0.08em]">GO</span>
                   <span className="text-muted-foreground mt-1.5 text-xs">开始测速</span>
@@ -262,37 +354,54 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
           />
         </button>
         {running ? (
-          <button
-            type="button"
-            onClick={() => void stop()}
-            className="text-destructive/90 hover:text-destructive animate-in fade-in mt-1 flex items-center gap-1.5 text-sm transition-colors duration-300"
-          >
-            <Square className="size-3.5" /> 停止测速
-          </button>
+          <p className="text-muted-foreground/60 animate-in fade-in mt-2 text-xs duration-300">
+            双击表盘停止测速
+          </p>
         ) : (
           startDisabled && (
-            <p className="text-muted-foreground animate-in fade-in text-xs duration-300">
+            <p className="text-muted-foreground animate-in fade-in mt-2 text-xs duration-300">
               {inWails() ? "设置加载中…" : "浏览器环境无法测速，开发预览请加 ?mock=1"}
             </p>
           )
         )}
       </div>
 
-      {/* 数据区：测完定格结束后展开，紧贴大圆下方；再点 GO 时随 Collapse 收起回流 */}
+      {/* running 实时区：上下行瞬时速率卡片 + 实时绘制的曲线 */}
+      {running && (
+        <div className="animate-in fade-in slide-in-from-bottom-2 mt-3 w-full space-y-3 duration-500">
+          <div className="grid grid-cols-2 gap-3">
+            <BigStat label="下载" mbps={liveDir.down} />
+            <BigStat label="上传" up mbps={liveDir.up} />
+          </div>
+          <SpeedChart samples={liveAll} height={148} colorByPhase />
+        </div>
+      )}
+
+      {/* 数据区：测完定格结束后展开；顺序 = 测速模式 → 出口/节点 → 上下行 → 明细/曲线 */}
       <Collapse open={dataOpen}>
         {shownFamily && (
           <div className="space-y-3 pt-1">
-            {shownResult && shownResult.families.length > 1 && (
-              <Tabs value={resultFamily} onValueChange={setResultFamily}>
-                <TabsList className="h-8">
-                  {shownResult.families.map((f) => (
-                    <TabsTrigger key={f.family} value={f.family} className="px-3 text-xs">
-                      {f.family}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            )}
+            {/* ① 测速模式（线程模式 + 地址族） */}
+            <div className="flex items-center justify-center gap-2">
+              <Badge variant="secondary" className="px-2">
+                {MODE_SHORT[mode]}
+              </Badge>
+              {shownResult && shownResult.families.length > 1 ? (
+                <Tabs value={resultFamily} onValueChange={setResultFamily}>
+                  <TabsList className="h-7">
+                    {shownResult.families.map((f) => (
+                      <TabsTrigger key={f.family} value={f.family} className="px-3 text-xs">
+                        {f.family}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              ) : (
+                <Badge variant="outline" className="px-2">
+                  {shownFamily.family}
+                </Badge>
+              )}
+            </div>
 
             {shownFamily.error ? (
               <Card className="border-destructive/40">
@@ -302,20 +411,25 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
               </Card>
             ) : (
               <>
-                {/* 大数字：多线程为主口径；单线程模式取单线程值 */}
+                {/* ② 出口/节点信息（节点取本轮实际使用的节点） */}
+                <InfoCluster
+                  client={shownResult?.client ?? location}
+                  ipv6OK={ipv6OK}
+                  node={shownFamily.node ?? pickedNode ?? autoNode}
+                  nodeLoading={!shownFamily.node && autoNodeLoading}
+                  onSwitch={() => setPickerOpen(true)}
+                  switchDisabled={!location && !shownResult?.client}
+                />
+
+                {/* ③ 上下行大数字：多线程为主口径；单线程模式取单线程值 */}
                 <div className="grid grid-cols-2 gap-3">
                   <BigStat label="下载" mbps={phaseMbpsOf(shownFamily, mode === "single" ? "down_single" : "down_multi")} />
                   <BigStat label="上传" up mbps={phaseMbpsOf(shownFamily, mode === "single" ? "up_single" : "up_multi")} />
                 </div>
 
-                {/* 小字行：节点 · 用时 · 时延 · 抖动（+ 单线程口径） */}
+                {/* ④ 明细小字行 */}
                 <div className="text-muted-foreground space-y-1 px-1 text-xs">
                   <div className="flex flex-wrap gap-x-3 gap-y-1">
-                    {shownFamily.node && (
-                      <span>
-                        {shownFamily.node.hostName || shownFamily.node.hostIp}（{shownFamily.node.hostIp}）
-                      </span>
-                    )}
                     {shownResult && <span>用时 {shownResult.durationS.toFixed(0)} 秒</span>}
                     <span>时延 {fmtMs(shownFamily.latencyMs)}</span>
                     <span>抖动 {fmtMs(shownFamily.jitterMs)}</span>
@@ -328,7 +442,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
                   )}
                 </div>
 
-                {/* 完整曲线：默认收起，点击展开 */}
+                {/* ⑤ 完整曲线：默认收起，点击展开；图例居中 */}
                 <div className="px-1">
                   <button
                     type="button"
@@ -341,7 +455,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
                   <Collapse open={curveOpen}>
                     <div className="pt-2">
                       <SpeedChart samples={shownFamily.samples} height={200} colorByPhase />
-                      <div className="mt-2 flex flex-wrap gap-4 text-xs">
+                      <div className="mt-2 flex flex-wrap justify-center gap-4 text-xs">
                         {PHASE_ORDER.filter((p) =>
                           mode === "both" ? true : mode === "single" ? p.endsWith("single") : p.endsWith("multi"),
                         ).map((p) => (
@@ -369,9 +483,9 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
         )}
       </Collapse>
 
-      {/* 工作区：分段控件 + 出口/节点信息；聚焦（测速中/定格）时整体收起，只留表盘 */}
-      <Collapse open={!focus}>
-        <div className="space-y-3 pt-1">
+      {/* 工作区（idle）：分段控件 + 出口/节点信息；测速中与结果态整体收起 */}
+      <Collapse open={run === "idle"}>
+        <div className="space-y-4 pt-1">
           <div className="flex items-stretch justify-center gap-2">
             <RubberSegment
               size="sm"
@@ -391,49 +505,14 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
             />
           </div>
 
-          <div className="flex w-full items-start justify-between gap-4 pt-1">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-sm font-medium">
-                  <span className="truncate">{location ? location.oper || "未知运营商" : "探测中…"}</span>
-                  {ipv6OK !== null && (
-                    <Badge variant={ipv6OK ? "success" : "secondary"} className="shrink-0 px-1.5 text-[10px]">
-                      {ipv6OK ? "IPv6 可用" : "IPv6 不可用"}
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-muted-foreground truncate text-xs">
-                  {location ? `${location.province} ${location.city} · ${location.ip}` : "正在获取出口信息"}
-                </div>
-              </div>
-              <div className="text-muted-foreground border-muted-foreground/30 flex size-9 shrink-0 items-center justify-center rounded-full border">
-                <User className="size-4" />
-              </div>
-            </div>
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="text-muted-foreground border-muted-foreground/30 flex size-9 shrink-0 items-center justify-center rounded-full border">
-                <Server className="size-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
-                  {displayNode ? displayNode.hostName || displayNode.hostIp : "自动选点"}
-                </div>
-                <div className="text-muted-foreground truncate text-xs">
-                  {displayNode
-                    ? `${displayNode.city} ${displayNode.oper}${pickedNode ? "" : " · 自动选择"}`
-                    : "开始测速时自动选择"}
-                </div>
-                <button
-                  type="button"
-                  className="text-primary hover:text-primary/80 mt-0.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
-                  disabled={running || !location}
-                  onClick={() => setPickerOpen(true)}
-                >
-                  切换节点
-                </button>
-              </div>
-            </div>
-          </div>
+          <InfoCluster
+            client={location}
+            ipv6OK={ipv6OK}
+            node={pickedNode ?? autoNode}
+            nodeLoading={autoNodeLoading}
+            onSwitch={() => setPickerOpen(true)}
+            switchDisabled={running || !location}
+          />
 
           {(family === "v6" || family === "both") && ipv6OK === false && (
             <p className="text-muted-foreground text-center text-xs">

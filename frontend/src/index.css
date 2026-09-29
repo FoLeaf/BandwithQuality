@@ -106,6 +106,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 固定尺寸的桌面窗口：隐藏滚动条（滚轮/拖拽滚动不受影响） */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
 /* 测速结束定格：中心读数放大脉冲一次 */
 @keyframes gauge-pulse {
   0% {

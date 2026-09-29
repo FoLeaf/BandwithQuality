@@ -3,7 +3,6 @@ import { BarChart3, GitCompare, History as HistoryIcon, Trash2, X } from "lucide
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -40,6 +39,38 @@ function rowOf(g: GroupedTest, family: string): HistoryRow | undefined {
 function SpeedCell({ v }: { v: number }) {
   return (
     <span className={cn("tabular font-medium", speedTone(v))}>{v < 0 ? "-" : fmtSpeed(v)}</span>
+  )
+}
+
+/** 一个地址族的测速摘要：徽标 + 节点/时延 + 标签对齐的速度格 */
+function FamilyBlock({ row }: { row: HistoryRow }) {
+  const cells: { label: string; v: number }[] = []
+  if (row.multiDown > 0) {
+    cells.push({ label: "多线程 ↓", v: row.multiDown }, { label: "多线程 ↑", v: row.multiUp })
+  }
+  if (row.singleDown > 0) {
+    cells.push({ label: "单线程 ↓", v: row.singleDown }, { label: "单线程 ↑", v: row.singleUp })
+  }
+  return (
+    <div className="mt-2.5 pl-6">
+      <div className="flex items-center gap-2 text-xs">
+        <Badge variant="secondary" className="shrink-0 px-1.5">
+          {row.family === "IPv4" ? "v4" : "v6"}
+        </Badge>
+        <span className="text-muted-foreground min-w-0 truncate">{row.nodeName || row.nodeIp}</span>
+        <span className="text-muted-foreground/70 shrink-0">时延 {fmtMs(row.latencyMs)}</span>
+      </div>
+      <div className={cn("mt-1.5 grid gap-x-4 gap-y-1.5", cells.length > 2 ? "grid-cols-4" : "grid-cols-2")}>
+        {cells.map((c) => (
+          <div key={c.label}>
+            <div className="text-muted-foreground/80 text-[10px] leading-none">{c.label}</div>
+            <div className="mt-1 text-sm">
+              <SpeedCell v={c.v} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -114,7 +145,7 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
   const famRows = (r: TestResult | undefined, family: string) => r?.families.find((f) => f.family === family)
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           <HistoryIcon className="size-4" /> 历史记录
@@ -130,72 +161,43 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[520px]">
-            <div className="divide-y">
-              {groups.length === 0 && (
-                <div className="text-muted-foreground py-16 text-center text-sm">暂无历史记录，去测一次吧</div>
-              )}
-              {groups.map((g) => {
-                const v4 = rowOf(g, "IPv4")
-                const v6 = rowOf(g, "IPv6")
-                const selected = compare.includes(g.testId)
-                const t = new Date(g.startedAt)
-                return (
-                  <div key={g.testId} className={cn("px-4 py-3", selected && "bg-accent/50")}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="accent-[var(--primary)] size-3.5"
-                        checked={selected}
-                        onChange={() => toggleCompare(g.testId)}
-                      />
-                      <button className="hover:text-primary min-w-0 flex-1 text-left" onClick={() => void openDetail(g.testId)}>
-                        <span className="font-medium">{t.toLocaleString("zh-CN", { hour12: false })}</span>
-                        <span className="text-muted-foreground ml-3 text-xs">
-                          {v4?.nodeName || v6?.nodeName || "—"} · 时延 {fmtMs(v4?.latencyMs ?? -1)}
-                        </span>
-                      </button>
-                      <Button variant="ghost" size="iconSm" onClick={() => void del(g.testId)} title="删除">
-                        <Trash2 className="text-muted-foreground" />
-                      </Button>
-                    </div>
-                    <div className="mt-1.5 grid grid-cols-2 gap-x-6 gap-y-1 pl-6 text-xs sm:grid-cols-4">
-                      {v4 && (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <Badge variant="secondary">v4</Badge>
-                          <span>下<S_SPEED v={v4.singleDown} /></span>
-                          <span>上<S_SPEED v={v4.singleUp} /></span>
-                          {v4.multiDown > 0 && (
-                            <>
-                              <span>多下<S_SPEED v={v4.multiDown} /></span>
-                              <span>多上<S_SPEED v={v4.multiUp} /></span>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      {v6 && (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <Badge variant="secondary">v6</Badge>
-                          <span>下<S_SPEED v={v6.singleDown} /></span>
-                          <span>上<S_SPEED v={v6.singleUp} /></span>
-                          {v6.multiDown > 0 && (
-                            <>
-                              <span>多下<S_SPEED v={v6.multiDown} /></span>
-                              <span>多上<S_SPEED v={v6.multiUp} /></span>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+      {/* 列表直接铺在页面背景上，不再套一层卡片 */}
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="divide-y pt-1">
+          {groups.length === 0 && (
+            <div className="text-muted-foreground py-16 text-center text-sm">暂无历史记录，去测一次吧</div>
+          )}
+          {groups.map((g) => {
+            const v4 = rowOf(g, "IPv4")
+            const v6 = rowOf(g, "IPv6")
+            const selected = compare.includes(g.testId)
+            const t = new Date(g.startedAt)
+            return (
+              <div
+                key={g.testId}
+                className={cn("-mx-2 mt-1 rounded-lg px-2 py-3 first:mt-0", selected && "bg-accent/40")}
+              >
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    className="accent-[var(--primary)] size-3.5 shrink-0"
+                    checked={selected}
+                    onChange={() => toggleCompare(g.testId)}
+                  />
+                  <button className="min-w-0 flex-1 text-left" onClick={() => void openDetail(g.testId)}>
+                    <span className="font-medium">{t.toLocaleString("zh-CN", { hour12: false })}</span>
+                  </button>
+                  <Button variant="ghost" size="iconSm" onClick={() => void del(g.testId)} title="删除">
+                    <Trash2 className="text-muted-foreground" />
+                  </Button>
+                </div>
+                {v4 && <FamilyBlock row={v4} />}
+                {v6 && <FamilyBlock row={v6} />}
+              </div>
+            )
+          })}
+        </div>
+      </ScrollArea>
 
       {/* 明细 */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
@@ -294,8 +296,4 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
       </Dialog>
     </div>
   )
-}
-
-function S_SPEED({ v }: { v: number }) {
-  return <SpeedCell v={v} />
 }

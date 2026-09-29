@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts"
 import type { Sample } from "@/lib/types"
-import { PHASE_LABEL } from "@/lib/types"
+import { PHASE_LABEL, PHASE_ORDER } from "@/lib/types"
 
 interface SpeedChartProps {
   /** 参与绘制的采样点（已按 phase 过滤或全量） */
@@ -32,20 +32,48 @@ const PHASE_COLORS: Record<string, string> = {
   up_multi: "var(--chart-4)",
 }
 
-/** 速率曲线：x=阶段内秒数，y=Mbps */
+interface Point {
+  x: number
+  y: number
+  phase: string
+}
+
+/**
+ * 引擎的 elapsedS 每个相位归零，直接绘制会让各相位叠在 0~5s 区间。
+ * 这里按 PHASE_ORDER 把相位串成一条连续时间轴：后一相位接着前一相位的末尾。
+ */
+function buildTimeline(samples: Sample[]): Point[] {
+  const sorted = samples.slice().sort((a, b) => a.index - b.index)
+  const phases = PHASE_ORDER.filter((p) => sorted.some((s) => s.phase === p))
+  const out: Point[] = []
+  let offset = 0
+  for (const p of phases) {
+    const pts = sorted.filter((s) => s.phase === p)
+    let span = 0
+    for (const s of pts) {
+      span = Math.max(span, s.elapsedS)
+      out.push({ x: +(offset + s.elapsedS).toFixed(2), y: Math.max(0, Number(s.speedMbps.toFixed(2))), phase: p })
+    }
+    offset += Math.max(span, 0.5)
+  }
+  return out
+}
+
+/** 横轴刻度：步长从常用档位里取能容纳 ≤5 格的最小值 */
+function xTicks(max: number): number[] {
+  const steps = [0.5, 1, 2, 2.5, 5, 10, 15, 30, 60, 120, 300]
+  const step = steps.find((s) => max / s <= 5) ?? 600
+  const ts: number[] = []
+  for (let v = 0; v <= max + 1e-9; v += step) ts.push(+v.toFixed(2))
+  return ts
+}
+
+/** 速率曲线：x=整个测速过程的时间轴（相位顺序累进），y=Mbps */
 export function SpeedChart({ samples, height = 220, maxMbps = 0, colorByPhase = false, color = "var(--chart-1)" }: SpeedChartProps) {
-  const data = useMemo(
-    () =>
-      samples
-        .slice()
-        .sort((a, b) => a.index - b.index)
-        .map((s) => ({
-          x: Number(s.elapsedS.toFixed(1)),
-          y: Math.max(0, Number(s.speedMbps.toFixed(2))),
-          phase: s.phase,
-        })),
-    [samples],
-  )
+  const data = useMemo(() => buildTimeline(samples), [samples])
+
+  const xMax = useMemo(() => Math.max(2, Math.ceil(data.length ? data[data.length - 1].x : 0)), [data])
+  const ticks = useMemo(() => xTicks(xMax), [xMax])
 
   const yMax = useMemo(() => {
     if (maxMbps > 0) return maxMbps
@@ -84,7 +112,10 @@ export function SpeedChart({ samples, height = 220, maxMbps = 0, colorByPhase = 
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
+            type="number"
             dataKey="x"
+            domain={[0, xMax]}
+            ticks={ticks}
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             tickFormatter={(v) => `${v}s`}
             stroke="var(--border)"
@@ -117,7 +148,7 @@ export function SpeedChart({ samples, height = 220, maxMbps = 0, colorByPhase = 
               key={p}
               type="monotone"
               dataKey="y"
-              data={p ? data.filter((d) => d.phase === p) : data}
+              data={data.filter((d) => d.phase === p)}
               stroke={colorByPhase ? PHASE_COLORS[p] ?? color : color}
               fill={`url(#grad-${p})`}
               strokeWidth={2}

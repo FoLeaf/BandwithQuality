@@ -58,9 +58,10 @@ export default function App() {
     <div className="bg-background flex h-screen flex-col overflow-hidden">
       <TitleBar />
       <main className="min-h-0 w-full flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-xl px-3 pt-2 pb-4">
+        {/* min-h-full + flex：让页面内容纵向铺满，测速页可把表盘在剩余空间里居中 */}
+        <div className="mx-auto flex min-h-full w-full max-w-xl flex-col px-3 pt-2 pb-4">
           {/* 三页常驻挂载，仅隐藏非当前页：测速中途可切页再切回，进度不丢 */}
-          <div className={cn(tab !== "speed" && "hidden")}>
+          <div className={cn("min-h-0 flex-1 flex-col", tab === "speed" ? "flex" : "hidden")}>
             <SpeedTestPage
               settings={settings}
               onPatchSettings={patchSettings}
@@ -69,7 +70,7 @@ export default function App() {
               }}
             />
           </div>
-          <div className={cn(tab !== "history" && "hidden")}>
+          <div className={cn("min-h-0 flex-1 flex-col", tab === "history" ? "flex" : "hidden")}>
             <HistoryPage visible={tab === "history"} />
           </div>
           <div className={cn(tab !== "settings" && "hidden")}>
