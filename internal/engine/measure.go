@@ -103,7 +103,9 @@ func downloadTransfer(ctx context.Context, s Node, uuid string, counter *byteCou
 	}
 	defer closeConn()
 	addr := hostPort(s.HostIP, s.Port)
-	req := fmt.Sprintf("GET /speed/File(1G).dl?r=%d&key=%s HTTP/1.1\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\nUser-Agent: %s\r\nHost: %s\r\n\r\n", time.Now().UnixNano(), uuid, uaBrowser, addr)
+	// 上游 WAF 只认官方客户端的原始报文：r 必须是秒级时间戳、不允许出现
+	// Accept-Encoding、Host 冒号后不能有空格——任何一处偏差都会被 403 拒绝。
+	req := fmt.Sprintf("GET /speed/File(1G).dl?r=%d&key=%s HTTP/1.1\r\nAccept: */*\r\nConnection: close\r\nUser-Agent: %s\r\nHost:%s\r\n\r\n", time.Now().Unix(), uuid, uaBrowser, addr)
 	var next time.Time
 	refreshDeadline(c, ctx, &next, false)
 	if _, err = io.WriteString(c, req); err != nil {
@@ -176,7 +178,7 @@ func uploadTransfer(ctx context.Context, s Node, uuid string, counter *byteCount
 		close(response)
 	}()
 	defer func() { _ = c.Close(); <-response }()
-	header := fmt.Sprintf("POST /speed/doAnalsLoad.do HTTP/1.1\r\nConnection: close\r\nCache-Control: no-cache\r\nCharset: UTF-8\r\nKey: %s\r\nContent-Type: multipart/form-data;boundary=%s\r\nUser-Agent: %s\r\nHost: %s\r\nContent-Length: %d\r\n\r\n%s", uuid, boundary, uaUpload, hostPort(s.HostIP, s.Port), contentLength, preamble)
+	header := fmt.Sprintf("POST /speed/doAnalsLoad.do HTTP/1.1\r\nConnection: close\r\nCache-Control: no-cache\r\nCharset: UTF-8\r\nKey: %s\r\nContent-Type: multipart/form-data;boundary=%s\r\nUser-Agent: %s\r\nHost: %s\r\nAccept-Encoding: gzip\r\nContent-Length: %d\r\n\r\n%s", uuid, boundary, uaUpload, hostPort(s.HostIP, s.Port), contentLength, preamble)
 	var next time.Time
 	refreshDeadline(c, ctx, &next, false)
 	if _, err = io.WriteString(c, header); err != nil {

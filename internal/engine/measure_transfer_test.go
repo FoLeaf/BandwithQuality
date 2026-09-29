@@ -303,3 +303,58 @@ func TestTransferResponseFragmentedHeaders(t *testing.T) {
 		})
 	}
 }
+
+// 上游 WAF 按官方客户端的原始报文做白名单过滤，任何偏差都返回 403：
+// r 必须是秒级时间戳、不允许出现 Accept-Encoding、Host 冒号后不能有空格。
+// httptest 会把请求规范化，锁不住字节级约束，这里用裸 TCP 监听断言原始报文。
+func TestDownloadWireFormatMatchesUpstreamWAF(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	rawCh := make(chan string, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		buf := make([]byte, 16<<10)
+		n, _ := c.Read(buf)
+		raw := string(buf[:n])
+		rawCh <- raw
+		_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nabcd")
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var counter byteCounter
+	downloadWorker(ctx, testNode(ln.Addr().String()), "uuid-x", &counter)
+	select {
+	case raw := <-rawCh:
+		if !strings.HasPrefix(raw, "GET /speed/File(1G).dl?r=") {
+			t.Fatalf("request line: %q", strings.SplitN(raw, "\r\n", 2)[0])
+		}
+		for _, line := range strings.Split(raw, "\r\n") {
+			if strings.HasPrefix(line, "GET ") || strings.HasPrefix(line, "Accept-Encoding") {
+				if strings.HasPrefix(line, "Accept-Encoding") {
+					t.Fatalf("Accept-Encoding must not be sent: %q", raw)
+				}
+				continue
+			}
+			if strings.HasPrefix(line, "Host:") {
+				if !strings.HasPrefix(line, "Host:127.0.0.1:") {
+					t.Fatalf("Host must have no space after colon: %q", line)
+				}
+			}
+		}
+		i := strings.Index(raw, "r=")
+		j := strings.Index(raw[i:], "&key=")
+		r := raw[i+2 : i+j]
+		if len(r) > 10 {
+			t.Fatalf("r must be unix seconds, got %d digits: %q", len(r), r)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no request captured")
+	}
+}
