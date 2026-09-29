@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** speedtest.net 式非线性刻度：各档位在弧上均匀分布 */
-const STOPS = [0, 5, 10, 50, 100, 250, 500, 750, 1000]
+const STOPS = [0, 5, 10, 50, 100, 250, 500, 750, 1000, 1500]
 const START_ANGLE = 135 // 底部左侧
 const SWEEP = 270 // 顺时针扫过角度
 
@@ -166,7 +166,7 @@ export function SpeedGauge({ value, phase, label, size = 280, className, center 
         </div>
         <div className="mt-1 flex items-center gap-1 text-xs" style={{ color: arcColor }}>
           {isUp ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
-          <span>Mbps</span>
+          <span>{display >= 1000 ? "Gbps" : "Mbps"}</span>
         </div>
         {label && <div className="text-muted-foreground mt-0.5 text-xs">{label}</div>}
       </div>

@@ -23,7 +23,7 @@ function WindowButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "hover:bg-muted flex h-11 w-11 items-center justify-center text-[var(--muted-foreground)] transition-colors outline-none",
+        "hover:bg-muted flex h-10 w-10 items-center justify-center text-[var(--muted-foreground)] transition-colors outline-none",
         danger && "hover:bg-destructive hover:text-white",
       )}
     >
@@ -67,7 +67,7 @@ export function TitleBar() {
       onDoubleClick={() => {
         if (inWails()) toggleMax()
       }}
-      className="bg-background/80 flex h-11 shrink-0 items-center border-b pl-3 select-none"
+      className="bg-background/80 flex h-10 shrink-0 items-center border-b pl-3 select-none"
     >
       <div className="flex items-center gap-2">
         <div className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded text-[11px] font-bold">

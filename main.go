@@ -17,10 +17,10 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:     "泰尔测速 · BandwidthQuality",
-		Width:     1180,
-		Height:    800,
-		MinWidth:  980,
-		MinHeight: 660,
+		Width:     680,
+		Height:    558,
+		MinWidth:  620,
+		MinHeight: 500,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

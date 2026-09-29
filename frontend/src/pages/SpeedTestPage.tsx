@@ -164,10 +164,10 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
   const showMulti = mode === "both" || mode === "multi"
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 顶部：出口信息 */}
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
+        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2.5">
           <div className="flex items-center gap-2 text-sm">
             <Globe className="text-primary size-4" />
             <span className="font-medium">出口</span>
@@ -219,10 +219,10 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
         </div>
       </div>
 
-      {/* 实时面板：左仪表盘 + 右趋势图（常驻） */}
+      {/* 实时面板：仪表盘居中为主体，开测后曲线出现在其下方 */}
       <Card>
-        <CardContent className="px-5 py-4">
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium">
+        <CardContent className="px-3 py-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm font-medium">
             <Activity className="text-primary size-4" />
             实时速率
             <Badge variant="secondary">{PHASE_LABEL[livePhase] ?? (running ? "…" : "待机")}</Badge>
@@ -237,21 +237,23 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
               </>
             )}
           </div>
-          <div className="grid items-center gap-4 lg:grid-cols-[300px_1fr]">
+          <div className="flex flex-col items-center gap-3">
             <SpeedGauge
+              size={320}
               value={liveSpeed}
               phase={livePhase}
               label={livePhase ? PHASE_LABEL[livePhase] : running ? "准备中" : ""}
-              className="justify-self-center"
               center={
                 centerStart ? (
                   <StartCircleButton onClick={() => void start()} disabled={!inWails() || !settings} />
                 ) : undefined
               }
             />
-            <div className="w-full">
-              <SpeedChart samples={liveSamples} height={250} color={liveColor} />
-            </div>
+            {!centerStart && (
+              <div className="w-full">
+                <SpeedChart samples={liveSamples} height={160} color={liveColor} />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -265,7 +267,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
 
       {/* 结果 */}
       {result && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <h3 className="text-sm font-semibold">测速结果</h3>
             {result.families.length > 1 && (
@@ -289,7 +291,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
 
           {shownFamily?.error && (
             <Card className="border-destructive/40">
-              <CardContent className="px-5 py-4 text-sm text-destructive">
+              <CardContent className="px-3 py-2.5 text-sm text-destructive">
                 {shownFamily.family} 轮失败：{shownFamily.error}
               </CardContent>
             </Card>
@@ -333,7 +335,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
               </div>
 
               <Card>
-                <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-2 px-5 py-4 text-sm">
+                <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-2 px-3 py-2.5 text-sm">
                   <span className="flex items-center gap-2">
                     <RefreshCw className="text-primary size-4" />
                     时延
@@ -348,11 +350,11 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
               </Card>
 
               <Card>
-                <CardContent className="px-5 py-4">
+                <CardContent className="px-3 py-3">
                   <div className="text-muted-foreground mb-2 text-xs">
                     完整采样曲线（500ms 采样，最终数值取最高 3 个采样的均值，与官方口径一致）
                   </div>
-                  <SpeedChart samples={shownFamily.samples} height={260} colorByPhase />
+                  <SpeedChart samples={shownFamily.samples} height={200} colorByPhase />
                   <div className="mt-2 flex flex-wrap gap-4 text-xs">
                     {PHASE_ORDER.filter((p) => (mode === "both" ? true : mode === "single" ? p.endsWith("single") : p.endsWith("multi"))).map(
                       (p) => (
