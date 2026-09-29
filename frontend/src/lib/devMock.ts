@@ -23,7 +23,7 @@ export function devMockActive(): boolean {
 }
 
 const MOCK_LOCATION: ClientLocation = { ip: "203.0.113.7", province: "北京", city: "北京", oper: "联通" }
-const MOCK_SETTINGS: Settings = { mode: "both", lengthS: 5, downThreads: 8, upThreads: 4, ipv6: true }
+const MOCK_SETTINGS: Settings = { mode: "both", lengthS: 5, downThreads: 8, upThreads: 4, family: "both" }
 const LATENCY_MS = 23.6
 const JITTER_MS = 3.2
 
@@ -92,6 +92,7 @@ export function mockStartTest(opts: Options): Promise<TestResult> {
       : opts.mode === "multi"
         ? PHASE_SEQ.filter((p) => p.endsWith("multi"))
         : PHASE_SEQ
+  const famName = opts.family === "v6" ? "IPv6" : "IPv4"
 
   const samplesByPhase: Record<string, Sample[]> = {}
   const result: TestResult = {
@@ -100,7 +101,7 @@ export function mockStartTest(opts: Options): Promise<TestResult> {
     durationS: 0,
     families: [
       {
-        family: "IPv4",
+        family: famName,
         node: null,
         latencyMs: LATENCY_MS,
         jitterMs: JITTER_MS,
@@ -127,7 +128,7 @@ export function mockStartTest(opts: Options): Promise<TestResult> {
     for (let k = 1; k <= n; k++) {
       const elapsedS = +((k * intervalMs) / 1000).toFixed(2)
       at(phaseStart + preheatMs + k * intervalMs, () => {
-        const s: Sample = { family: "IPv4", phase, index: k, elapsedS, speedMbps: +curve(elapsedS, peak).toFixed(2) }
+        const s: Sample = { family: famName, phase, index: k, elapsedS, speedMbps: +curve(elapsedS, peak).toFixed(2) }
         ;(samplesByPhase[phase] ??= []).push(s)
         fire(subs.sample, s)
       })

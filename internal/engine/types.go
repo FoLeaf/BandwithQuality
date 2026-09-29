@@ -20,6 +20,13 @@ const (
 	ModeMulti  = "multi"  // 仅多线程
 )
 
+// 地址族选项。
+const (
+	FamilyV4   = "v4"   // 仅 IPv4
+	FamilyV6   = "v6"   // 仅 IPv6
+	FamilyBoth = "both" // IPv4 + IPv6（v6 不可用时自动回退仅 v4）
+)
+
 const (
 	FamilyIPv4 = "IPv4"
 	FamilyIPv6 = "IPv6"
@@ -65,12 +72,22 @@ type Options struct {
 	IntervalMS  int    `json:"intervalMs"`  // 采样间隔毫秒，默认 500
 	DownThreads int    `json:"downThreads"` // 多线程下行连接数，默认 8
 	UpThreads   int    `json:"upThreads"`   // 多线程上行连接数，默认 4
-	IPv6        bool   `json:"ipv6"`        // 可用时附加一轮 IPv6 完整测试
+	Family      string `json:"family"`      // v4 | v6 | both
+	IPv6        bool   `json:"ipv6"`        // 旧字段（已废弃）：Family 为空时按它推导 v4/both
 }
 
 func (o *Options) fill() {
 	if o.Mode != ModeSingle && o.Mode != ModeMulti {
 		o.Mode = ModeBoth
+	}
+	switch o.Family {
+	case FamilyV4, FamilyV6, FamilyBoth:
+	default:
+		if o.IPv6 {
+			o.Family = FamilyBoth
+		} else {
+			o.Family = FamilyV4
+		}
 	}
 	if o.LengthS < 5 {
 		o.LengthS = 5

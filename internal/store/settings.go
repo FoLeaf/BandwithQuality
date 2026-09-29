@@ -14,16 +14,18 @@ type Settings struct {
 	LengthS     int    `json:"lengthS"`     // 每阶段 5..13 秒
 	DownThreads int    `json:"downThreads"` // 多线程下行连接数
 	UpThreads   int    `json:"upThreads"`   // 多线程上行连接数
-	IPv6        bool   `json:"ipv6"`        // IPv6 附加轮（默认开）
+	Family      string `json:"family"`      // v4 | v6 | both
+	IPv6        bool   `json:"ipv6"`        // 旧字段（已废弃）：仅用于迁移老配置到 Family
 }
 
-// DefaultSettings 默认设置：与官方口径一致的对照模式、5 秒/阶段、IPv6 开。
+// DefaultSettings 默认设置：与官方口径一致的对照模式、5 秒/阶段、IPv4+IPv6 双栈。
 func DefaultSettings() Settings {
 	return Settings{
 		Mode:        engine.ModeBoth,
 		LengthS:     5,
 		DownThreads: 8,
 		UpThreads:   4,
+		Family:      engine.FamilyBoth,
 		IPv6:        true,
 	}
 }
@@ -72,10 +74,19 @@ func SaveSettings(s Settings) error {
 	return os.WriteFile(p, b, 0o644)
 }
 
-// Normalize 收敛非法值。
+// Normalize 收敛非法值，并把旧配置的 ipv6 布尔迁移到 family。
 func (s *Settings) Normalize() {
 	if s.Mode != engine.ModeSingle && s.Mode != engine.ModeMulti {
 		s.Mode = engine.ModeBoth
+	}
+	switch s.Family {
+	case engine.FamilyV4, engine.FamilyV6, engine.FamilyBoth:
+	default:
+		if s.IPv6 {
+			s.Family = engine.FamilyBoth
+		} else {
+			s.Family = engine.FamilyV4
+		}
 	}
 	if s.LengthS < 5 {
 		s.LengthS = 5
@@ -95,6 +106,7 @@ func (s *Settings) Normalize() {
 	if s.UpThreads > 32 {
 		s.UpThreads = 32
 	}
+	s.IPv6 = s.Family != engine.FamilyV4 // 保持旧字段与 family 一致
 }
 
 // ToOptions 应用设置 → 引擎参数（不填充 Node，选点由测速页决定）。
@@ -105,6 +117,6 @@ func (s Settings) ToOptions() engine.Options {
 		LengthS:     s.LengthS,
 		DownThreads: s.DownThreads,
 		UpThreads:   s.UpThreads,
-		IPv6:        s.IPv6,
+		Family:      s.Family,
 	}
 }

@@ -92,9 +92,7 @@ export const clearHistory = (): Promise<void> => (MOCK ? mockNoop() : go().Clear
 export const getSettings = async (): Promise<Settings> => {
   if (MOCK) return mockGetSettings()
   const s = await go().GetSettings()
-  return (
-    s ?? { mode: "both", lengthS: 5, downThreads: 8, upThreads: 4, ipv6: true }
-  )
+  return s ?? { mode: "both", lengthS: 5, downThreads: 8, upThreads: 4, family: "both" }
 }
 export const saveSettings = (s: Settings): Promise<void> => (MOCK ? mockSaveSettings(s) : go().SaveSettings(s))
 

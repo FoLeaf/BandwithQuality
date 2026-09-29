@@ -182,7 +182,8 @@ func enqueueWithFallback(ctx context.Context, nodes []Node, primary *Node, imei 
 
 // RunTest 执行一次完整测速：出口探测 → 选点 → 排队 → 时延 → 各阶段吞吐 → 退队。
 // opts.Node 非 nil 时 IPv4 轮使用该节点（IPv6 轮仍自动择优）；
-// opts.IPv6 且网络具备 v6 互联网时附加一轮 IPv6。
+// opts.Family 决定地址族：v4 仅 IPv4，v6 仅 IPv6（无 v6 出口直接报错），
+// both 先测 IPv4，网络具备 v6 互联网时附加一轮 IPv6。
 // 通过 cb.OnProgress / cb.OnSample 实时推送进度与采样点。
 func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, error) {
 	opts.fill()
@@ -196,8 +197,21 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 		name string
 		v6   bool
 	}
-	fams := []fam{{FamilyIPv4, false}}
-	if opts.IPv6 {
+	var fams []fam
+	switch opts.Family {
+	case FamilyV6:
+		emit(cb, "probe", "检测 IPv6 可用性…", 6)
+		if HasIPv6Internet() {
+			fams = append(fams, fam{FamilyIPv6, true})
+		} else {
+			result := &TestResult{Client: loc, StartedAt: time.Now()}
+			result.Families = append(result.Families,
+				FamilyResult{Family: FamilyIPv6, LatencyMS: -1, Error: "当前网络无 IPv6 出口"})
+			emit(cb, "error", "IPv6 不可用，无法进行 IPv6 测速", 100)
+			return result, fmt.Errorf("IPv6 不可用，无法进行 IPv6 测速")
+		}
+	case FamilyBoth:
+		fams = append(fams, fam{FamilyIPv4, false})
 		emit(cb, "probe", "检测 IPv6 可用性…", 6)
 		if HasIPv6Internet() {
 			fams = append(fams, fam{FamilyIPv6, true})
@@ -205,6 +219,8 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 		} else {
 			emit(cb, "probe", "IPv6 不可用，仅测 IPv4", 8)
 		}
+	default: // FamilyV4
+		fams = append(fams, fam{FamilyIPv4, false})
 	}
 
 	result := &TestResult{Client: loc, StartedAt: time.Now()}
@@ -221,7 +237,8 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 
 		var nodes []Node
 		var node *Node
-		if fi == 0 && opts.Node != nil {
+		// 手动指定节点只作用于 IPv4 轮（选点列表来自 v4 接口，v6 轮仍自动择优）
+		if fi == 0 && opts.Node != nil && !f.v6 {
 			node = opts.Node
 		} else {
 			emit(cb, "nodes", "获取节点列表…", phaseBase+span*0.1)

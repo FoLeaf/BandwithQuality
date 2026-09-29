@@ -25,7 +25,8 @@ export interface Options {
   intervalMs: number
   downThreads: number
   upThreads: number
-  ipv6: boolean
+  /** 地址族：v4 | v6 | both */
+  family: string
 }
 
 export interface Sample {
@@ -89,7 +90,16 @@ export interface Settings {
   lengthS: number
   downThreads: number
   upThreads: number
-  ipv6: boolean
+  /** 地址族：v4 | v6 | both（旧字段 ipv6 已废弃，由 Go 侧迁移） */
+  family: string
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  mode: "both",
+  lengthS: 5,
+  downThreads: 8,
+  upThreads: 4,
+  family: "both",
 }
 
 export interface ListOptions {
@@ -113,4 +123,23 @@ export const MODE_LABEL: Record<string, string> = {
   both: "单线程 + 多线程对照",
   single: "仅单线程",
   multi: "仅多线程",
+}
+
+/** 分段控件里的短标签 */
+export const MODE_SHORT: Record<string, string> = {
+  both: "单+双",
+  single: "单线程",
+  multi: "多线程",
+}
+
+export const FAMILY_LABEL: Record<string, string> = {
+  v4: "IPv4",
+  v6: "IPv6",
+  both: "V4+V6",
+}
+
+export const FAMILY_NOTE: Record<string, string> = {
+  v4: "仅测 IPv4",
+  v6: "仅测 IPv6，需要网络支持",
+  both: "先测 IPv4，检测到 IPv6 时附加一轮（耗时约翻倍）",
 }

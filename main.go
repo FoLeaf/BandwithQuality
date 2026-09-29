@@ -16,11 +16,12 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:     "泰尔测速 · BandwidthQuality",
-		Width:     680,
-		Height:    558,
-		MinWidth:  620,
-		MinHeight: 500,
+		Title: "泰尔测速 · BandwidthQuality",
+		// 竖屏手机比例 9:16（450×800，最小 405×720），拖拽时由前端 resize 钩子继续保持比例
+		Width:     450,
+		Height:    800,
+		MinWidth:  405,
+		MinHeight: 720,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

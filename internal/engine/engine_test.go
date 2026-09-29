@@ -209,6 +209,18 @@ func TestOptionsFill(t *testing.T) {
 	if o2.LengthS != 13 || o2.Mode != ModeBoth || o2.IntervalMS != 500 {
 		t.Errorf("越界值应收敛: %+v", o2)
 	}
+	if o.Family != FamilyV4 {
+		t.Errorf("family 默认应为 v4: %+v", o)
+	}
+	if f := (Options{Family: FamilyV6}); func() string { f.fill(); return f.Family }() != FamilyV6 {
+		t.Error("合法 family 不应被改写")
+	}
+	if f := (Options{IPv6: true}); func() string { f.fill(); return f.Family }() != FamilyBoth {
+		t.Error("旧 ipv6=true 应迁移为 both")
+	}
+	if f := (Options{Family: "x"}); func() string { f.fill(); return f.Family }() != FamilyV4 {
+		t.Error("非法 family 应回退 v4")
+	}
 }
 
 func TestPhaseList(t *testing.T) {

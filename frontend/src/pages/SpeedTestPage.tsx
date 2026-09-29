@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { NodePickerDialog } from "@/components/NodePickerDialog"
+import RubberSegment from "@/components/RubberSegment"
 import { SpeedChart } from "@/components/SpeedChart"
 import { SpeedGauge } from "@/components/SpeedGauge"
 import { StatCard } from "@/components/StatCard"
@@ -37,12 +38,27 @@ import { cn, fmtMs, fmtSpeed, speedTone } from "@/lib/utils"
 
 interface SpeedTestPageProps {
   settings: Settings | null
+  onPatchSettings: (patch: Partial<Settings>) => void
+  /** 一次测速完成（写历史后）通知外层，用于底栏红点 */
+  onFinished?: () => void
 }
 
 /** 一次测速的运行态 */
 type RunState = "idle" | "running" | "done"
 
-export function SpeedTestPage({ settings }: SpeedTestPageProps) {
+// 仪表盘正下方的两个分段控件：线程模式 × 地址族
+const MODE_ITEMS = [
+  { value: "single", label: "单线程" },
+  { value: "multi", label: "多线程" },
+  { value: "both", label: "单+双" },
+]
+const FAMILY_ITEMS = [
+  { value: "v4", label: "IPv4" },
+  { value: "v6", label: "IPv6" },
+  { value: "both", label: "V4+V6" },
+]
+
+export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTestPageProps) {
   const [location, setLocation] = useState<ClientLocation | null>(null)
   const [ipv6OK, setIpv6OK] = useState<boolean | null>(null)
   const [pickedNode, setPickedNode] = useState<Node | null>(null)
@@ -57,6 +73,9 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
   const [resultFamily, setResultFamily] = useState("IPv4")
   const runRef = useRef(false)
   const phaseRef = useRef("")
+  // 事件接线注册在挂载时，onFinished 经 ref 转发避免闭包过期
+  const onFinishedRef = useRef(onFinished)
+  onFinishedRef.current = onFinished
 
   // 出口探测 + IPv6 检测
   useEffect(() => {
@@ -93,6 +112,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
       setRun("done")
       setResult(r)
       setResultFamily("IPv4")
+      onFinishedRef.current?.()
     })
     onError((msg) => {
       // toast 由 start() 的 catch 统一提示，这里只复位状态
@@ -116,7 +136,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
       intervalMs: 500,
       downThreads: settings.downThreads,
       upThreads: settings.upThreads,
-      ipv6: settings.ipv6 && (ipv6OK ?? false),
+      family: settings.family,
     }
     setResult(null)
     setLiveSamples([])
@@ -160,6 +180,7 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
   const shownFamily = result?.families.find((f) => f.family === resultFamily) ?? result?.families[0]
   const phaseMbps = (phase: string) => shownFamily?.phases.find((p) => p.phase === phase)?.mbps ?? -1
   const mode = settings?.mode ?? "both"
+  const family = settings?.family ?? "both"
   const showSingle = mode === "both" || mode === "single"
   const showMulti = mode === "both" || mode === "multi"
 
@@ -249,6 +270,30 @@ export function SpeedTestPage({ settings }: SpeedTestPageProps) {
                 ) : undefined
               }
             />
+            {/* 仪表盘正下方：线程模式与地址族两个分段控件并列一排（改动影响下一次测速） */}
+            <div className="flex items-stretch justify-center gap-2">
+              <RubberSegment
+                size="sm"
+                aria-label="线程模式"
+                items={MODE_ITEMS}
+                value={mode}
+                disabled={running}
+                onChange={(v) => onPatchSettings({ mode: v })}
+              />
+              <RubberSegment
+                size="sm"
+                aria-label="地址族"
+                items={FAMILY_ITEMS}
+                value={family}
+                disabled={running}
+                onChange={(v) => onPatchSettings({ family: v })}
+              />
+            </div>
+            {(family === "v6" || family === "both") && ipv6OK === false && (
+              <p className="text-muted-foreground text-center text-xs">
+                {family === "v6" ? "未检测到 IPv6 出口，无法进行 IPv6 测速" : "未检测到 IPv6 出口，将仅测 IPv4"}
+              </p>
+            )}
             {!centerStart && (
               <div className="w-full">
                 <SpeedChart samples={liveSamples} height={160} color={liveColor} />

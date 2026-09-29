@@ -43,7 +43,7 @@ function SpeedCell({ v }: { v: number }) {
   )
 }
 
-export function HistoryPage() {
+export function HistoryPage({ visible }: { visible?: boolean }) {
   const [rows, setRows] = useState<HistoryRow[]>([])
   const [detail, setDetail] = useState<TestResult | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -62,6 +62,11 @@ export function HistoryPage() {
   useEffect(() => {
     if (inWails()) void reload()
   }, [reload])
+
+  // 页面常驻挂载：每次切到历史页时刷新（新测完的结果立刻可见）
+  useEffect(() => {
+    if (visible) void reload()
+  }, [visible, reload])
 
   const groups = useMemo(() => groupByTest(rows), [rows])
 
