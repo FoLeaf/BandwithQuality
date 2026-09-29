@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Activity, ChevronDown, Globe, MapPin, RefreshCw, Square, Wifi } from "lucide-react"
+import { Activity, RefreshCw, Server, Square, User } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -168,7 +168,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
     }
   }, [])
 
-  const nodeShown = pickedNode
+  const displayNode = pickedNode ?? result?.families[0]?.node ?? null
   const running = run === "running"
   const liveSpeed = liveSamples.length > 0 ? Math.max(0, liveSamples[liveSamples.length - 1].speedMbps) : 0
   const liveColor = livePhase.startsWith("up") ? "var(--chart-2)" : "var(--chart-1)"
@@ -186,39 +186,6 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
 
   return (
     <div className="space-y-3">
-      {/* 顶部：出口信息 */}
-      <Card>
-        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2.5">
-          <div className="flex items-center gap-2 text-sm">
-            <Globe className="text-primary size-4" />
-            <span className="font-medium">出口</span>
-            <span className="tabular text-muted-foreground">{location ? location.ip : "探测中…"}</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <MapPin className="text-primary size-4" />
-            <span className="text-muted-foreground">
-              {location ? `${location.province} ${location.city} ${location.oper}` : "…"}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Wifi className="text-primary size-4" />
-            {ipv6OK === null ? (
-              <span className="text-muted-foreground">IPv6 未知</span>
-            ) : ipv6OK ? (
-              <Badge variant="success">IPv6 可用</Badge>
-            ) : (
-              <Badge variant="secondary">IPv6 不可用</Badge>
-            )}
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={running} onClick={() => setPickerOpen(true)}>
-              <ChevronDown />
-              {nodeShown ? `已指定：${nodeShown.hostName || nodeShown.hostIp}` : "自动选点"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* 控制条：进度与停止（开始按钮在仪表盘中心/面板下方） */}
       <div className="flex items-center gap-4">
         {running && (
@@ -288,6 +255,50 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
                 disabled={running}
                 onChange={(v) => onPatchSettings({ family: v })}
               />
+            </div>
+            {/* 仪表盘底部两侧：左出口、右节点（Ookla 式），切换节点打开选点弹窗 */}
+            <div className="flex w-full items-start justify-between gap-4 pt-1">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <span className="truncate">{location ? location.oper || "未知运营商" : "探测中…"}</span>
+                    {ipv6OK !== null && (
+                      <Badge variant={ipv6OK ? "success" : "secondary"} className="shrink-0 px-1.5 text-[10px]">
+                        {ipv6OK ? "IPv6 可用" : "IPv6 不可用"}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-muted-foreground truncate text-xs">
+                    {location ? `${location.province} ${location.city} · ${location.ip}` : "正在获取出口信息"}
+                  </div>
+                </div>
+                <div className="text-muted-foreground border-muted-foreground/30 flex size-9 shrink-0 items-center justify-center rounded-full border">
+                  <User className="size-4" />
+                </div>
+              </div>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="text-muted-foreground border-muted-foreground/30 flex size-9 shrink-0 items-center justify-center rounded-full border">
+                  <Server className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">
+                    {displayNode ? displayNode.hostName || displayNode.hostIp : "自动选点"}
+                  </div>
+                  <div className="text-muted-foreground truncate text-xs">
+                    {displayNode
+                      ? `${displayNode.city} ${displayNode.oper}${pickedNode ? "" : " · 自动选择"}`
+                      : "开始测速时自动选择"}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-primary hover:text-primary/80 mt-0.5 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50"
+                    disabled={running || !location}
+                    onClick={() => setPickerOpen(true)}
+                  >
+                    切换节点
+                  </button>
+                </div>
+              </div>
             </div>
             {(family === "v6" || family === "both") && ipv6OK === false && (
               <p className="text-muted-foreground text-center text-xs">
