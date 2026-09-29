@@ -95,10 +95,10 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  mode: "both",
-  lengthS: 5,
-  downThreads: 8,
-  upThreads: 4,
+  mode: "multi",
+  lengthS: 13,
+  downThreads: 16,
+  upThreads: 8,
   family: "both",
 }
 

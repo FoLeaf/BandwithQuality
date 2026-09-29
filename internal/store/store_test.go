@@ -16,8 +16,8 @@ func testResult(t *testing.T, at time.Time) *engine.TestResult {
 		DurationS: 36.5,
 		Families: []engine.FamilyResult{
 			{
-				Family: engine.FamilyIPv4,
-				Node:   &engine.Node{HostName: "湖北武汉电信", HostIP: "111.22.33.1", Port: 8080, City: "武汉", Oper: "电信"},
+				Family:    engine.FamilyIPv4,
+				Node:      &engine.Node{HostName: "湖北武汉电信", HostIP: "111.22.33.1", Port: 8080, City: "武汉", Oper: "电信"},
 				LatencyMS: 12.5, JitterMS: 1.2,
 				Phases: []engine.PhaseResult{
 					{Phase: engine.PhaseDownSingle, Mbps: 321.5},
@@ -112,11 +112,11 @@ func TestSettingsRoundtrip(t *testing.T) {
 	// 直接测 Normalize 收敛；文件读写依赖用户目录，这里只验证逻辑
 	s := Settings{Mode: "x", LengthS: 1, DownThreads: 0, UpThreads: 99}
 	s.Normalize()
-	if s.Mode != engine.ModeBoth || s.LengthS != 5 || s.DownThreads != 8 || s.UpThreads != 32 {
+	if s.Mode != engine.ModeMulti || s.LengthS != 5 || s.DownThreads != 16 || s.UpThreads != 32 {
 		t.Errorf("Normalize 不对: %+v", s)
 	}
 	o := s.ToOptions()
-	if o.LengthS != 5 || o.Mode != engine.ModeBoth || o.DownThreads != 8 || o.UpThreads != 32 {
+	if o.LengthS != 5 || o.Mode != engine.ModeMulti || o.DownThreads != 16 || o.UpThreads != 32 {
 		t.Errorf("ToOptions 不对: %+v", o)
 	}
 }

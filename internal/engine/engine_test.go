@@ -187,12 +187,12 @@ func TestMakeIMEI(t *testing.T) {
 func TestOptionsFill(t *testing.T) {
 	o := Options{}
 	o.fill()
-	if o.Mode != ModeBoth || o.LengthS != 5 || o.IntervalMS != 500 || o.DownThreads != 8 || o.UpThreads != 4 {
+	if o.Mode != ModeMulti || o.LengthS != 13 || o.IntervalMS != 500 || o.DownThreads != 16 || o.UpThreads != 8 {
 		t.Errorf("默认值不对: %+v", o)
 	}
 	o2 := Options{LengthS: 99, Mode: "x", IntervalMS: 10}
 	o2.fill()
-	if o2.LengthS != 13 || o2.Mode != ModeBoth || o2.IntervalMS != 500 {
+	if o2.LengthS != 13 || o2.Mode != ModeMulti || o2.IntervalMS != 500 {
 		t.Errorf("越界值应收敛: %+v", o2)
 	}
 	if o.Family != FamilyV4 {
@@ -245,5 +245,21 @@ func TestShortIP(t *testing.T) {
 	}
 	if !strings.Contains(shortIP("2001:db8::1"), "2001") {
 		t.Errorf("v6 不应打码: %q", shortIP("2001:db8::1"))
+	}
+}
+
+func TestOptionsPreserveExplicitSettings(t *testing.T) {
+	for _, mode := range []string{ModeSingle, ModeMulti, ModeBoth} {
+		o := Options{Mode: mode, LengthS: 5, DownThreads: 8, UpThreads: 4, Family: FamilyBoth, IntervalMS: 500}
+		want := o
+		o.fill()
+		if o != want {
+			t.Fatalf("explicit settings changed: got %+v want %+v", o, want)
+		}
+	}
+	o := Options{LengthS: 1}
+	o.fill()
+	if o.LengthS != 5 {
+		t.Fatalf("positive duration must still clamp to minimum: %+v", o)
 	}
 }

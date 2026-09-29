@@ -12,7 +12,7 @@ import type {
   Settings,
   TestResult,
 } from "./types"
-import { PHASE_LABEL } from "./types"
+import { DEFAULT_SETTINGS, PHASE_LABEL } from "./types"
 
 export function devMockActive(): boolean {
   return (
@@ -23,7 +23,7 @@ export function devMockActive(): boolean {
 }
 
 const MOCK_LOCATION: ClientLocation = { ip: "203.0.113.7", province: "北京", city: "北京", oper: "联通" }
-const MOCK_SETTINGS: Settings = { mode: "both", lengthS: 5, downThreads: 8, upThreads: 4, family: "both" }
+const MOCK_SETTINGS: Settings = { ...DEFAULT_SETTINGS }
 const LATENCY_MS = 23.6
 const JITTER_MS = 3.2
 
@@ -100,7 +100,7 @@ export function mockStartTest(opts: Options): Promise<TestResult> {
   running = true
   timers = []
 
-  const lengthS = Math.max(2, opts.lengthS || 5)
+  const lengthS = Math.max(2, opts.lengthS || DEFAULT_SETTINGS.lengthS)
   const intervalMs = Math.max(100, opts.intervalMs || 500)
   const preheatMs = 800 // 真实引擎为 2000，mock 缩短以便快速看到动画
   const phases =

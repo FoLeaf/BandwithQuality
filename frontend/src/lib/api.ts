@@ -12,6 +12,7 @@ import type {
   Settings,
   TestResult,
 } from "./types"
+import { DEFAULT_SETTINGS } from "./types"
 import {
   devMockActive,
   mockAutoSelectNode,
@@ -97,7 +98,7 @@ export const clearHistory = (): Promise<void> => (MOCK ? mockNoop() : go().Clear
 export const getSettings = async (): Promise<Settings> => {
   if (MOCK) return mockGetSettings()
   const s = await go().GetSettings()
-  return s ?? { mode: "both", lengthS: 5, downThreads: 8, upThreads: 4, family: "both" }
+  return s ?? { ...DEFAULT_SETTINGS }
 }
 export const saveSettings = (s: Settings): Promise<void> => (MOCK ? mockSaveSettings(s) : go().SaveSettings(s))
 

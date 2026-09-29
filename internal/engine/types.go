@@ -19,6 +19,14 @@ const (
 	ModeMulti  = "multi"  // 仅多线程
 )
 
+// 高带宽默认值：兼顾长窗口与连接开销，不直接拉满 32 连接。
+const (
+	DefaultMode        = ModeMulti
+	DefaultLengthS     = 13
+	DefaultDownThreads = 16
+	DefaultUpThreads   = 8
+)
+
 // 地址族选项。
 const (
 	FamilyV4   = "v4"   // 仅 IPv4
@@ -69,15 +77,15 @@ type Options struct {
 	Mode        string `json:"mode"`        // both | single | multi
 	LengthS     int    `json:"lengthS"`     // 每阶段时长 5..13 秒
 	IntervalMS  int    `json:"intervalMs"`  // 采样间隔毫秒，默认 500
-	DownThreads int    `json:"downThreads"` // 多线程下行连接数，默认 8
-	UpThreads   int    `json:"upThreads"`   // 多线程上行连接数，默认 4
+	DownThreads int    `json:"downThreads"` // 多线程下行连接数，默认 16
+	UpThreads   int    `json:"upThreads"`   // 多线程上行连接数，默认 8
 	Family      string `json:"family"`      // v4 | v6 | both
 	IPv6        bool   `json:"ipv6"`        // 旧字段（已废弃）：Family 为空时按它推导 v4/both
 }
 
 func (o *Options) fill() {
-	if o.Mode != ModeSingle && o.Mode != ModeMulti {
-		o.Mode = ModeBoth
+	if o.Mode != ModeSingle && o.Mode != ModeMulti && o.Mode != ModeBoth {
+		o.Mode = DefaultMode
 	}
 	switch o.Family {
 	case FamilyV4, FamilyV6, FamilyBoth:
@@ -87,6 +95,9 @@ func (o *Options) fill() {
 		} else {
 			o.Family = FamilyV4
 		}
+	}
+	if o.LengthS <= 0 {
+		o.LengthS = DefaultLengthS
 	}
 	if o.LengthS < 5 {
 		o.LengthS = 5
@@ -107,10 +118,10 @@ func (o *Options) fill() {
 		o.UpThreads = 32
 	}
 	if o.DownThreads < 1 {
-		o.DownThreads = 8
+		o.DownThreads = DefaultDownThreads
 	}
 	if o.UpThreads < 1 {
-		o.UpThreads = 4
+		o.UpThreads = DefaultUpThreads
 	}
 }
 

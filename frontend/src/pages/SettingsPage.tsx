@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
 import RubberSegment from "@/components/RubberSegment"
 import type { Settings } from "@/lib/types"
-import { FAMILY_LABEL, FAMILY_NOTE, MODE_SHORT } from "@/lib/types"
+import { DEFAULT_SETTINGS, FAMILY_LABEL, FAMILY_NOTE, MODE_SHORT } from "@/lib/types"
 
 interface SettingsPageProps {
   settings: Settings | null
@@ -24,11 +24,11 @@ const FAMILY_ITEMS = [
 ]
 
 export function SettingsPage({ settings, onPatchSettings }: SettingsPageProps) {
-  const s = settings
-  const mode = s?.mode ?? "both"
-  const family = s?.family ?? "both"
+  const s = settings ?? DEFAULT_SETTINGS
+  const mode = s.mode
+  const family = s.family
 
-  const estMinutes = (((s?.lengthS ?? 5) + 2) * (mode === "both" ? 4 : 2) + 8) / 60 * (family !== "v4" ? 2 : 1)
+  const estMinutes = ((s.lengthS + 2) * (mode === "both" ? 4 : 2) + 8) / 60 * (family !== "v4" ? 2 : 1)
 
   return (
     <div className="space-y-4">
@@ -36,7 +36,7 @@ export function SettingsPage({ settings, onPatchSettings }: SettingsPageProps) {
         <CardHeader>
           <CardTitle>测速模式</CardTitle>
           <CardDescription>
-            与官方客户端一致的对照模式：先单线程再多线程，各测上/下行。改动即时生效并自动保存。
+            默认多线程、13 秒/阶段、16 下行/8 上行连接，优先测出带宽上限；也可切换单线程对照。改动自动保存。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -74,25 +74,25 @@ export function SettingsPage({ settings, onPatchSettings }: SettingsPageProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>每阶段时长</Label>
-              <span className="tabular text-sm font-medium">{s?.lengthS ?? 5} 秒</span>
+              <span className="tabular text-sm font-medium">{s.lengthS} 秒</span>
             </div>
             <Slider
-              value={[s?.lengthS ?? 5]}
+              value={[s.lengthS]}
               min={5}
               max={13}
               step={1}
               onValueChange={([v]) => onPatchSettings({ lengthS: v })}
             />
-            <p className="text-muted-foreground text-xs">官方默认 5 秒；拉长可降低波动，耗时相应增加。</p>
+            <p className="text-muted-foreground text-xs">默认 13 秒，给连接充分预热并降低波动；缩短可节省时间和流量。</p>
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>多线程下行连接数</Label>
-              <span className="tabular text-sm font-medium">{s?.downThreads ?? 8}</span>
+              <span className="tabular text-sm font-medium">{s.downThreads}</span>
             </div>
             <Slider
-              value={[s?.downThreads ?? 8]}
+              value={[s.downThreads]}
               min={1}
               max={32}
               step={1}
@@ -103,10 +103,10 @@ export function SettingsPage({ settings, onPatchSettings }: SettingsPageProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>多线程上行连接数</Label>
-              <span className="tabular text-sm font-medium">{s?.upThreads ?? 4}</span>
+              <span className="tabular text-sm font-medium">{s.upThreads}</span>
             </div>
             <Slider
-              value={[s?.upThreads ?? 4]}
+              value={[s.upThreads]}
               min={1}
               max={32}
               step={1}

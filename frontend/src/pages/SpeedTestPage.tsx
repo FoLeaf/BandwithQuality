@@ -30,7 +30,7 @@ import type {
   Settings,
   TestResult,
 } from "@/lib/types"
-import { MODE_SHORT, PHASE_LABEL, PHASE_ORDER } from "@/lib/types"
+import { DEFAULT_SETTINGS, MODE_SHORT, PHASE_LABEL, PHASE_ORDER } from "@/lib/types"
 import { cn, fmtMs, fmtSpeed, speedTone } from "@/lib/utils"
 
 interface SpeedTestPageProps {
@@ -315,8 +315,8 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
   const startDisabled = !inWails() || !settings
 
   const shownFamily = shownResult?.families.find((f) => f.family === resultFamily) ?? shownResult?.families[0]
-  const mode = settings?.mode ?? "both"
-  const family = settings?.family ?? "both"
+  const mode = settings?.mode ?? DEFAULT_SETTINGS.mode
+  const family = settings?.family ?? DEFAULT_SETTINGS.family
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
