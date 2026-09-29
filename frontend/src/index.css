@@ -105,3 +105,20 @@
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* 测速结束定格：中心读数放大脉冲一次 */
+@keyframes gauge-pulse {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.14);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.gauge-pulse {
+  display: inline-block;
+  animation: gauge-pulse 700ms ease-out;
+}
