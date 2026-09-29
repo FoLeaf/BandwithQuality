@@ -1,6 +1,5 @@
-// Package engine 实现泰尔「全球网测」测速协议的客户端引擎。
-// 改造自 MiaM1ku/taierspeedtest（无 LICENSE，保留所有权利），
-// 剥离 CLI 交互与出图上传链路，按平台修正 ping 参数，新增实时采样回调。
+// Package engine 实现网络带宽测速的客户端引擎：
+// 控制面选点、TCP/HTTP 数据面吞吐测量、ICMP/TCP 时延，并以实时采样回调驱动前端曲线。
 package engine
 
 import "time"

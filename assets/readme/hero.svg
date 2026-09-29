@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="100%" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <title>BandwithQuality — 高性能、简洁的网络带宽测试工具</title>
+  <desc>左侧为项目名与定位，右侧为应用的速度仪表盘（下行多线程实时读数）。</desc>
+  <defs>
+    <radialGradient id="face" cx="50%" cy="42%" r="66%">
+      <stop offset="0%" stop-color="#31313A"/>
+      <stop offset="68%" stop-color="#1F1F25"/>
+      <stop offset="100%" stop-color="#111114"/>
+    </radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#181B22"/>
+      <stop offset="100%" stop-color="#12141A"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <path d="('M -16.77 505.36 L -15.36 506.77 L -26.67 516.67 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -24.45 496.96 L -23.67 497.87 L -30.14 502.61 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -31.71 487.68 L -31.00 488.65 L -37.82 492.87 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -38.21 477.86 L -37.58 478.89 L -44.72 482.55 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -43.92 467.56 L -43.38 468.63 L -50.78 471.73 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -48.96 456.48 L -48.20 458.33 L -62.44 463.14 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -52.84 445.78 L -52.47 446.92 L -60.27 448.82 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -56.00 434.43 L -55.72 435.60 L -63.63 436.88 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -58.25 422.87 L -58.06 424.06 L -66.05 424.72 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -59.58 411.17 L -59.49 412.37 L -67.51 412.40 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -60.00 399.00 L -60.00 401.00 L -75.00 400.00 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -59.49 387.63 L -59.58 388.83 L -67.51 387.60 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -58.06 375.94 L -58.25 377.13 L -66.05 375.28 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -55.72 364.40 L -56.00 365.57 L -63.63 363.12 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -52.47 353.08 L -52.84 354.22 L -60.27 351.18 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -48.20 341.67 L -48.96 343.52 L -62.44 336.86 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -43.38 331.37 L -43.92 332.44 L -50.78 328.27 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -37.58 321.11 L -38.21 322.14 L -44.72 317.45 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -31.00 311.35 L -31.71 312.32 L -37.82 307.13 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -23.67 302.13 L -24.45 303.04 L -30.14 297.39 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -15.36 293.23 L -16.77 294.64 L -26.67 283.33 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M -6.96 285.55 L -7.87 286.33 L -12.61 279.86 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 2.32 278.29 L 1.35 279.00 L -2.87 272.18 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 12.14 271.79 L 11.11 272.42 L 7.45 265.28 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 22.44 266.08 L 21.37 266.62 L 18.27 259.22 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 33.52 261.04 L 31.67 261.80 L 26.86 247.56 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 44.22 257.16 L 43.08 257.53 L 41.18 249.73 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 55.57 254.00 L 54.40 254.28 L 53.12 246.37 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 67.13 251.75 L 65.94 251.94 L 65.28 243.95 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 78.83 250.42 L 77.63 250.51 L 77.60 242.49 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 91.00 250.00 L 89.00 250.00 L 90.00 235.00 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 102.37 250.51 L 101.17 250.42 L 102.40 242.49 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 114.06 251.94 L 112.87 251.75 L 114.72 243.95 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 125.60 254.28 L 124.43 254.00 L 126.88 246.37 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 136.92 257.53 L 135.78 257.16 L 138.82 249.73 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 148.33 261.80 L 146.48 261.04 L 153.14 247.56 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 158.63 266.62 L 157.56 266.08 L 161.73 259.22 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 168.89 272.42 L 167.86 271.79 L 172.55 265.28 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 178.65 279.00 L 177.68 278.29 L 182.87 272.18 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 187.87 286.33 L 186.96 285.55 L 192.61 279.86 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 196.77 294.64 L 195.36 293.23 L 206.67 283.33 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 204.45 303.04 L 203.67 302.13 L 210.14 297.39 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 211.71 312.32 L 211.00 311.35 L 217.82 307.13 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 218.21 322.14 L 217.58 321.11 L 224.72 317.45 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 223.92 332.44 L 223.38 331.37 L 230.78 328.27 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 228.96 343.52 L 228.20 341.67 L 242.44 336.86 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 232.84 354.22 L 232.47 353.08 L 240.27 351.18 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 236.00 365.57 L 235.72 364.40 L 243.63 363.12 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 238.25 377.13 L 238.06 375.94 L 246.05 375.28 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 239.58 388.83 L 239.49 387.63 L 247.51 387.60 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 240.00 401.00 L 240.00 399.00 L 255.00 400.00 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 239.49 412.37 L 239.58 411.17 L 247.51 412.40 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 238.06 424.06 L 238.25 422.87 L 246.05 424.72 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 235.72 435.60 L 236.00 434.43 L 243.63 436.88 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 232.47 446.92 L 232.84 445.78 L 240.27 448.82 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 228.20 458.33 L 228.96 456.48 L 242.44 463.14 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 223.38 468.63 L 223.92 467.56 L 230.78 471.73 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 217.58 478.89 L 218.21 477.86 L 224.72 482.55 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 211.00 488.65 L 211.71 487.68 L 217.82 492.87 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 203.67 497.87 L 204.45 496.96 L 210.14 502.61 Z',)" fill="#FFFFFF" opacity="0.045"/>
+      <path d="('M 195.36 506.77 L 196.77 505.36 L 206.67 516.67 Z',)" fill="#FFFFFF" opacity="0.045"/>
+
+  <!-- 左侧标题区 -->
+  <g>
+    <path d="M 72 96 L 76.5 84 L 81 96 Z" fill="#008C8B"/>
+    <path d="M 88 96 L 92.5 84 L 97 96 Z" fill="#CC7044"/>
+    <path d="M 104 96 L 108.5 84 L 113 96 Z" fill="#EF4444"/>
+    <text x="126" y="96" font-family="ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace" font-size="15" letter-spacing="4.5" fill="#7C8598">BANDWIDTH SPEED TEST</text>
+
+    <text x="70" y="172" font-size="60" font-weight="800" letter-spacing="-1" fill="#F5F7FA">BandwithQuality</text>
+
+    <text x="72" y="226" font-size="26" font-weight="500" fill="#DDE3EA">高性能、简洁的网络带宽测试工具</text>
+
+    <text x="72" y="266" font-size="15.5" fill="#96A0B0">单文件 Windows 客户端 · 实时速率曲线 · IPv4 / IPv6 双栈 · 本地历史记录</text>
+
+    <g font-size="13.5" fill="#B9C2CF">
+      <rect x="72" y="300" width="104" height="30" rx="15" fill="none" stroke="#2E3542"/>
+      <text x="124" y="319.5" text-anchor="middle">Go + Wails</text>
+      <rect x="188" y="300" width="152" height="30" rx="15" fill="none" stroke="#2E3542"/>
+      <text x="264" y="319.5" text-anchor="middle">React 18 · Tailwind</text>
+      <rect x="352" y="300" width="136" height="30" rx="15" fill="none" stroke="#2E3542"/>
+      <text x="420" y="319.5" text-anchor="middle">SQLite 本地存储</text>
+      <rect x="500" y="300" width="140" height="30" rx="15" fill="none" stroke="#2E3542"/>
+      <text x="570" y="319.5" text-anchor="middle">Windows 单 exe</text>
+    </g>
+  </g>
+
+  <!-- 右侧仪表盘（复刻应用内 SpeedGauge） -->
+  <g>
+    <circle cx="985" cy="212" r="129.0" fill="url(#face)"/>
+    <circle cx="985" cy="212" r="129.0" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="1.5"/>
+    <circle cx="985" cy="212" r="129.0" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="4.5"/>
+    <path d="M 893.78 303.22 A 129.0 129.0 0 1 1 1102.60 158.99"
+          fill="none" stroke="#008C8B" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M 887.10 307.14 L 889.86 309.90 L 873.63 323.37 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 876.02 294.20 L 877.39 295.99 L 867.19 302.40 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 866.23 279.28 L 867.35 281.22 L 856.40 286.25 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 858.46 263.20 L 859.32 265.28 L 847.80 268.83 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 852.86 246.24 L 853.44 248.42 L 841.56 250.43 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 852.65 245.45 L 853.66 249.21 L 832.87 252.76 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 849.52 228.70 L 849.81 230.93 L 837.77 231.38 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 848.50 210.88 L 848.50 213.13 L 836.50 212.00 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 849.81 193.07 L 849.52 195.30 L 837.77 192.62 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 853.44 175.58 L 852.86 177.76 L 841.56 173.57 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 853.66 174.79 L 852.65 178.55 L 832.87 171.24 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 859.32 158.72 L 858.46 160.80 L 847.80 155.17 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 867.35 142.78 L 866.23 144.72 L 856.40 137.75 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 877.39 128.01 L 876.02 129.80 L 867.19 121.60 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 889.28 114.68 L 887.68 116.28 L 879.99 106.99 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 889.86 114.10 L 887.10 116.86 L 873.63 100.63 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 902.80 103.02 L 901.01 104.39 L 894.60 94.19 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 917.72 93.23 L 915.78 94.35 L 910.75 83.40 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 933.80 85.46 L 931.72 86.32 L 928.17 74.80 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 950.76 79.86 L 948.58 80.44 L 946.57 68.56 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 951.55 79.65 L 947.79 80.66 L 944.24 59.87 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 968.30 76.52 L 966.07 76.81 L 965.62 64.77 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 986.12 75.50 L 983.88 75.50 L 985.00 63.50 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1003.93 76.81 L 1001.70 76.52 L 1004.38 64.77 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1021.42 80.44 L 1019.24 79.86 L 1023.43 68.56 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1022.21 80.66 L 1018.45 79.65 L 1025.76 59.87 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 1038.28 86.32 L 1036.20 85.46 L 1041.83 74.80 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1054.22 94.35 L 1052.28 93.23 L 1059.25 83.40 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1068.99 104.39 L 1067.20 103.02 L 1075.40 94.19 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1082.32 116.28 L 1080.72 114.68 L 1090.01 106.99 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1082.90 116.86 L 1080.14 114.10 L 1096.37 100.63 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 1093.98 129.80 L 1092.61 128.01 L 1102.81 121.60 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1103.77 144.72 L 1102.65 142.78 L 1113.60 137.75 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1111.54 160.80 L 1110.68 158.72 L 1122.20 155.17 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1117.14 177.76 L 1116.56 175.58 L 1128.44 173.57 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1117.35 178.55 L 1116.34 174.79 L 1137.13 171.24 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 1120.48 195.30 L 1120.19 193.07 L 1132.23 192.62 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1121.50 213.12 L 1121.50 210.87 L 1133.50 212.00 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1120.19 230.93 L 1120.48 228.70 L 1132.23 231.38 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1116.56 248.42 L 1117.14 246.24 L 1128.44 250.43 Z" fill="#FFFFFF" opacity="0.26"/>
+      <path d="M 1116.34 249.21 L 1117.35 245.45 L 1137.13 252.76 Z" fill="#FFFFFF" opacity="0.5"/>
+      <path d="M 1110.68 265.28 L 1111.54 263.20 L 1122.20 268.83 Z" fill="#EF4444" opacity="0.3"/>
+      <path d="M 1102.65 281.22 L 1103.77 279.28 L 1113.60 286.25 Z" fill="#EF4444" opacity="0.3"/>
+      <path d="M 1092.61 295.99 L 1093.98 294.20 L 1102.81 302.40 Z" fill="#EF4444" opacity="0.3"/>
+      <path d="M 1080.72 309.32 L 1082.32 307.72 L 1090.01 317.01 Z" fill="#EF4444" opacity="0.3"/>
+      <path d="M 1080.14 309.90 L 1082.90 307.14 L 1096.37 323.37 Z" fill="#EF4444" opacity="0.55"/>
+      <text x="861.4" y="335.6" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">0</text>
+      <text x="816.2" y="257.2" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">5</text>
+      <text x="816.2" y="166.8" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">10</text>
+      <text x="861.4" y="88.4" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">50</text>
+      <text x="939.8" y="43.2" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">100</text>
+      <text x="1030.2" y="43.2" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">250</text>
+      <text x="1108.6" y="88.4" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">500</text>
+      <text x="1153.8" y="166.8" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">750</text>
+      <text x="1153.8" y="257.2" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#FFFFFF" opacity="0.6">1000</text>
+      <text x="1108.6" y="335.6" dy="0.35em" text-anchor="middle" font-size="14.2" font-weight="600" fill="#EF4444" opacity="0.7">1500</text>
+    M 1113.10 156.72 L 1111.25 152.62 L 1138.16 142.96 Z
+    <circle cx="1112.18" cy="154.67" r="2.7" fill="#008C8B"/>
+
+    <g text-anchor="middle">
+      <g transform="translate(921,196)">
+        <path d="M 0 -11 L 0 11 M -7 4 L 0 11 L 7 4" fill="none" stroke="#008C8B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <text x="971" y="210" dy="0.02em" font-size="48" font-weight="600" letter-spacing="-1" fill="#F5F7FA">672.8</text>
+      <text x="985" y="246" font-size="15" fill="#96A0B0">Mbps</text>
+      <text x="985" y="272" font-size="13" fill="#96A0B0">多线程下行 · 58%</text>
+    </g>
+  </g>
+</svg>

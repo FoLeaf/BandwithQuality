@@ -73,8 +73,7 @@ export function TitleBar() {
         <div className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded text-[11px] font-bold">
           速
         </div>
-        <span className="text-[13px] font-medium">泰尔测速</span>
-        <span className="text-muted-foreground hidden text-xs sm:inline">· 全球网测</span>
+        <span className="text-[13px] font-medium">BandwithQuality</span>
       </div>
 
       <div style={noDragStyle} className="ml-auto flex h-full items-stretch">

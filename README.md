@@ -1,34 +1,43 @@
-# 泰尔测速 · BandwidthQuality
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="BandwithQuality — 高性能、简洁的网络带宽测试工具，右侧为应用的速度仪表盘">
+</p>
 
-本机 → 泰尔「全球网测」官方测速节点的网络质量桌面客户端。Windows 单 exe，中文界面。
+# BandwithQuality
 
-> 协议实现改造自开源项目 [MiaM1ku/taierspeedtest](https://github.com/MiaM1ku/taierspeedtest)（上游无 LICENSE，保留所有权利）。仅供个人网络质量测试研究，请勿用于商业用途。
+**高性能、简洁的网络带宽测试工具。** 单文件 Windows 桌面客户端：一键测速、实时速率曲线、IPv4 / IPv6 双栈、本地历史记录。Go 引擎进程内运行，无运行时依赖、免安装、开箱即用。
 
-## 功能
+<p align="center">
+  <img src="./assets/readme/showcase.png" width="100%" alt="应用截图：一键开始、实时仪表盘、结果明细与完整曲线">
+</p>
 
-- **一键测速**：自动选点（出口探测 → 三级回退择优），单线程 + 多线程上下行对照
-- **实时曲线**：500ms 采样逐 tick 推送，速率曲线实时绘制；最终数值取最高 3 个采样均值（与官方口径一致）
-- **手动选点**：真实节点列表，省市/运营商切换浏览、同城优先、节点延迟显示、搜索
-- **地址族可选**：IPv4 / IPv6 / V4+V6 双栈（检测到 v6 出口才附加，可关）
-- **历史记录**：SQLite 本地存储，列表 / 明细曲线 / 两次对比
-- **可调参数**：每阶段 5–13s、多线程连接数、线程模式、地址族；窗口 9:16 竖屏 + 底栏导航
+## 特性
 
-## 技术栈
+- **一键测速** — 自动选点（出口探测 → 多级回退择优），单线程 + 多线程上下行对照，全程约 30–40 秒
+- **实时仪表盘** — 500ms 采样逐 tick 推送，指针、刻度与速率曲线实时绘制；最终速率取最高 3 个采样均值，读数稳定可信
+- **手动选点** — 真实节点列表：省市 / 运营商切换浏览、同城优先、节点延迟显示、搜索
+- **地址族可选** — IPv4 / IPv6 / V4+V6 双栈，自动探测公网 IPv6 出口，可随时关闭
+- **历史与对比** — SQLite 本地存储，历史列表、单次明细曲线、两次测速对比
+- **可调参数** — 每阶段时长 5–13s、上下行线程数、线程模式、地址族
+- **克制的界面** — 9:16 竖屏窗口，深色仪表盘风格，底栏三页导航（测速 / 历史 / 设置）
 
-| 层 | 选型 |
-|---|---|
-| 壳 | [Wails v2](https://wails.io)（Go + 系统 WebView，单 exe） |
-| 前端 | React 18 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui + recharts |
-| 引擎 | `internal/engine` —— 上游 Go 源码魔改抽取，剥离 CLI，加采样回调与 Windows ping 修正 |
-| 存储 | SQLite（modernc.org/sqlite 纯 Go，无 cgo） |
+## 快速开始
 
-## 开发
+### 下载使用
 
-依赖：Go ≥1.26（wails v2.10 类型加载器暂不兼容 1.27 导出格式）、Node ≥20、[Wails CLI v2](https://wails.io/docs/gettingstarted/installation)。
+从 [Releases](https://github.com/FoLeaf/BandwithQuality/releases) 下载最新的 Windows 安装包（`-setup.exe`）或免压缩 zip，安装后打开点 **GO** 即可。
+
+> 安装包未做代码签名：首次运行如遇 SmartScreen 提示，选择「更多信息 → 仍要运行」。
+
+### 从源码构建
+
+依赖：Go ≥ 1.26（wails v2.10 暂不兼容 1.27 的导出格式）、Node ≥ 20、[Wails CLI v2](https://wails.io/docs/gettingstarted/installation)。
 
 ```bash
-wails dev        # 开发（可加 -browser 在浏览器里调试）
-wails build      # 产出 build/bin/BandwidthQuality.exe
+git clone https://github.com/FoLeaf/BandwithQuality.git
+cd BandwithQuality
+
+wails dev        # 开发调试（可加 -browser 在浏览器里看）
+wails build      # 产出 build/bin/BandwithQuality.exe
 ```
 
 测试：
@@ -37,13 +46,41 @@ wails build      # 产出 build/bin/BandwidthQuality.exe
 go test ./...
 ```
 
-Windows 首次运行未签名 exe 会有 SmartScreen 提示：「更多信息 → 仍要运行」。
+前端开发预览（无需 Go 后端，模拟事件流）：
 
-## 结构
+```bash
+cd frontend && npm install && npm run dev
+# 浏览器打开 http://localhost:5173/?mock=1
+```
+
+## 工作原理
+
+<p align="center">
+  <img src="./assets/readme/workflow.svg" width="100%" alt="架构：React 前端通过 Wails 事件桥连接 Go 测速引擎，引擎访问测速节点，结果写入 SQLite">
+</p>
+
+- **前端** React 18 + TypeScript + Tailwind + shadcn/ui，负责仪表盘、曲线与交互
+- **引擎** `internal/engine`：控制面（HTTPS 选点与排队）、数据面（TCP 流式下载 / 分块上传）、时延面（系统 ICMP ping，Windows 参数修正，失败自动回退 TCP 探测）三层分离，纯 Go 无 cgo
+- **事件桥** 引擎每 500ms 推一次采样，经 Wails 事件（`bq:progress` / `bq:sample` / `bq:finished`）直达前端，进程内直连、无子进程
+- **存储** modernc.org/sqlite 纯 Go 驱动，历史与设置本地持久化
+
+## 项目结构
 
 ```
-main.go / app.go        Wails 壳与绑定层（事件：bq:progress / bq:sample / bq:finished）
-internal/engine         测速引擎（控制面 + 数据面 + 时延 + 编排）
+main.go / app.go        Wails 壳与绑定层
+internal/engine         测速引擎（控制面 / 数据面 / 时延 / 编排）
 internal/store          SQLite 历史 + 设置持久化
-frontend/               React 前端（shadcn/ui）
+frontend/               React 前端（shadcn/ui + recharts）
+cmd/diag                节点连通性诊断小工具
 ```
+
+## 平台支持
+
+| 平台 | 状态 |
+|---|---|
+| Windows 10 / 11 | ✅ 提供安装包与免安装 zip |
+| macOS / Linux | 同一代码库可编译，后续跟进 |
+
+## 许可
+
+本项目尚未附加开源许可证，默认保留所有权利，仅供个人学习与研究使用。

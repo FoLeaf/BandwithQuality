@@ -125,9 +125,8 @@ export function SettingsPage({ settings, onPatchSettings }: SettingsPageProps) {
           <CardTitle>关于</CardTitle>
         </CardHeader>
         <CardContent className="text-muted-foreground space-y-1.5 text-sm">
-          <p>泰尔测速 · BandwidthQuality — 本机到「全球网测」官方节点的网络质量测试。</p>
-          <p>协议实现改造自开源项目 MiaM1ku/taierspeedtest（无 LICENSE，仅供个人学习研究）。</p>
-          <p>测速结果与官方「全球网测」App 同口径：500ms 采样、跳过 2s 预热、取最高 3 个采样均值。</p>
+          <p>BandwithQuality — 高性能、简洁的网络带宽测试桌面工具。</p>
+          <p>500ms 采样、跳过预热段、取最高 3 个采样均值作为最终速率。</p>
         </CardContent>
       </Card>
     </div>

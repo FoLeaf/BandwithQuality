@@ -16,7 +16,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title: "泰尔测速 · BandwidthQuality",
+		Title: "BandwithQuality",
 		// 竖屏手机比例 9:16（450×800，最小 405×720），拖拽时由前端 resize 钩子继续保持比例
 		Width:     450,
 		Height:    800,

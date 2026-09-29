@@ -86,11 +86,11 @@ jobs:
         run: |
           $v = '${{ steps.ver.outputs.version }}'
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -Path build/bin/BandwidthQuality.exe, build/bin/bandwidthquality-diag.exe `
-            -DestinationPath "release/BandwidthQuality-$v-windows-amd64.zip"
+          Compress-Archive -Path build/bin/BandwithQuality.exe, build/bin/bandwidthquality-diag.exe `
+            -DestinationPath "release/BandwithQuality-$v-windows-amd64.zip"
           $installer = Get-ChildItem build/bin -Filter '*installer.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($installer) {
-            Copy-Item $installer.FullName "release/BandwidthQuality-$v-windows-amd64-setup.exe"
+            Copy-Item $installer.FullName "release/BandwithQuality-$v-windows-amd64-setup.exe"
           }
           Get-ChildItem release
 
@@ -98,7 +98,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: 泰尔测速 ${{ steps.ver.outputs.tag }}
+          name: BandwithQuality ${{ steps.ver.outputs.tag }}
           body: |
             > 安装包未做代码签名，首次运行如遇 SmartScreen 提示，请选择「仍要运行」。
           generate_release_notes: true
