@@ -1,0 +1,107 @@
+name: Release
+
+# 触发方式：
+# 1. GitHub 网页 → Actions → Release → Run workflow，填版本号后点击运行
+# 2. 推送 v 开头的标签也会自动触发：git tag v1.0.0 && git push origin v1.0.0
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.0.0，可带 v 前缀）'
+        required: true
+        default: '1.0.0'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release (Windows amd64)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        shell: bash
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # runner 自带 NSIS，但可能不在 PATH 上，找到就加上，找不到则跳过安装包
+      - name: Locate NSIS
+        shell: pwsh
+        run: |
+          $dir = "${env:ProgramFiles(x86)}\NSIS"
+          if (Test-Path (Join-Path $dir 'makensis.exe')) {
+            Add-Content -Path $env:GITHUB_PATH -Value $dir
+            Write-Host "NSIS found: $dir"
+          } else {
+            Write-Host "NSIS not found, installer will be skipped"
+          }
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        env:
+          RAW: ${{ inputs.version || github.ref_name }}
+        run: |
+          V="${RAW#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+
+      - name: Build app
+        shell: pwsh
+        run: |
+          $wailsArgs = @('build', '-clean', '-platform', 'windows/amd64',
+                         '-webview2', 'embed', '-ldflags', '-s -w')
+          if (Get-Command makensis -ErrorAction SilentlyContinue) {
+            $wailsArgs += '-nsis'
+          }
+          wails @wailsArgs
+
+      - name: Build diag CLI
+        shell: pwsh
+        run: go build -trimpath -ldflags "-s -w" -o build/bin/bandwidthquality-diag.exe ./cmd/diag
+
+      - name: Stage assets
+        shell: pwsh
+        run: |
+          $v = '${{ steps.ver.outputs.version }}'
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -Path build/bin/BandwidthQuality.exe, build/bin/bandwidthquality-diag.exe `
+            -DestinationPath "release/BandwidthQuality-$v-windows-amd64.zip"
+          $installer = Get-ChildItem build/bin -Filter '*installer.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($installer) {
+            Copy-Item $installer.FullName "release/BandwidthQuality-$v-windows-amd64-setup.exe"
+          }
+          Get-ChildItem release
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: 泰尔测速 ${{ steps.ver.outputs.tag }}
+          body: |
+            > 安装包未做代码签名，首次运行如遇 SmartScreen 提示，请选择「仍要运行」。
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release/*
