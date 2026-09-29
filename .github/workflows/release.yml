@@ -54,6 +54,7 @@ jobs:
             choco install nsis -y --no-progress
           }
           Add-Content -Path $env:GITHUB_PATH -Value "${env:ProgramFiles(x86)}\NSIS"
+          $env:PATH = "${env:ProgramFiles(x86)}\NSIS;$env:PATH"
           Get-Command makensis
 
       - name: Resolve version
