@@ -46,17 +46,15 @@ jobs:
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      # runner 自带 NSIS，但可能不在 PATH 上，找到就加上，找不到则跳过安装包
-      - name: Locate NSIS
+      # runner 镜像不一定带 NSIS，用 Chocolatey 装好并把 makensis 加进 PATH
+      - name: Install NSIS
         shell: pwsh
         run: |
-          $dir = "${env:ProgramFiles(x86)}\NSIS"
-          if (Test-Path (Join-Path $dir 'makensis.exe')) {
-            Add-Content -Path $env:GITHUB_PATH -Value $dir
-            Write-Host "NSIS found: $dir"
-          } else {
-            Write-Host "NSIS not found, installer will be skipped"
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
+            choco install nsis -y --no-progress
           }
+          Add-Content -Path $env:GITHUB_PATH -Value "${env:ProgramFiles(x86)}\NSIS"
+          Get-Command makensis
 
       - name: Resolve version
         id: ver
