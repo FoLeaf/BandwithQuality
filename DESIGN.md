@@ -29,9 +29,10 @@
 - 排队/令牌校验（MD5 token）
 
 ### 数据面
-- 下载：TCP 流式读取（64KB 读缓冲、总时长截止、单读超时截止）
-- 上传：HTTP multipart 分块循环写入（16KB 随机块）
-- 采样：500ms tick、跳过预热段、取最高 3 个采样均值（avgTop3）平滑；每个 tick 把瞬时速率实时回调给前端画曲线
+- 下载：TCP 流式读取（256 KiB 缓冲），复用 Go net/http 响应解析处理 Content-Length / chunked；完整文件读完后续开请求，直至阶段截止。
+- 上传：共享只读 256 KiB 随机块，准确完成 900 MB Content-Length 与 multipart 尾边界；并发监听服务端拒绝，完成请求后续开连接。仅统计文件负载，不统计 HTTP/multipart 头尾。
+- 采样：默认 500ms tick、2 秒预热，按实际单调时钟间隔计算双窗口速率，最终取最高 3 个采样均值（avgTop3）；每连接独立计数，采样时聚合。
+- 生命周期：并发启动连接，阶段 deadline / cancel 立即关闭阻塞连接，退出前等待所有 worker；不修改操作系统 TCP 自动调优和缓冲设置。
 
 ### 时延
 - exec 系统 ping，按平台修参数（Windows `-n`/`-w` 毫秒；Unix `-c`/`-W`），失败回退 TCP tcping

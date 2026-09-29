@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +23,7 @@ func calcMbps(nbytes int64, durationMS float64) float64 {
 
 type byteCounter struct {
 	n atomic.Int64
+	_ [120]byte // Separate worker counters to avoid cache-line contention.
 }
 
 func (c *byteCounter) add(n int) { c.n.Add(int64(n)) }
@@ -27,171 +31,177 @@ func (c *byteCounter) snap() int64 {
 	return c.n.Load()
 }
 
-// parseHTTPHeader 从裸 TCP 读到的首块数据里找 HTTP 响应头边界。
-func parseHTTPHeader(buf []byte) (code int, bodyOff int, ok bool) {
-	idx := indexDoubleCRLF(buf)
-	if idx < 0 {
-		return 0, 0, false
+const transferBufferSize = 256 << 10
+const uploadContentLength int64 = 900000000
+
+// One immutable random block shared by uploads; never generate entropy on the hot path.
+var uploadPayload = sync.OnceValue(func() []byte {
+	payload := make([]byte, transferBufferSize)
+	if _, err := rand.Read(payload); err != nil {
+		panic(err)
 	}
-	first := firstLine(buf[:idx])
-	if !hasHTTP11Prefix(first) {
-		return 0, 0, false
+	return payload
+})
+
+// Cancellation closes blocked reads/writes immediately; the phase waits for all workers.
+func dialTransfer(ctx context.Context, s Node) (net.Conn, func(), error) {
+	d := net.Dialer{Timeout: 8 * time.Second}
+	c, err := d.DialContext(ctx, "tcp", hostPort(s.HostIP, s.Port))
+	if err != nil {
+		return nil, nil, err
 	}
-	code = statusCode(first)
-	return code, idx + 4, true
+	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = c.SetDeadline(deadline)
+	}
+	return c, func() { stop(); _ = c.Close() }, nil
 }
 
-func indexDoubleCRLF(buf []byte) int {
-	for i := 0; i+3 < len(buf); i++ {
-		if buf[i] == '\r' && buf[i+1] == '\n' && buf[i+2] == '\r' && buf[i+3] == '\n' {
-			return i
-		}
+// Refresh idle deadlines at most once per second, not once per 16 KiB syscall.
+// Read and write deadlines are independent: upload responses may arrive only at EOF.
+func refreshDeadline(c net.Conn, ctx context.Context, next *time.Time, down bool) {
+	now := time.Now()
+	if now.Before(*next) {
+		return
 	}
-	return -1
+	deadline := now.Add(3 * time.Second)
+	if end, ok := ctx.Deadline(); ok && end.Before(deadline) {
+		deadline = end
+	}
+	if down {
+		_ = c.SetReadDeadline(deadline)
+	} else {
+		_ = c.SetWriteDeadline(deadline)
+	}
+	*next = now.Add(time.Second)
 }
 
-func firstLine(buf []byte) string {
-	for i, b := range buf {
-		if b == '\r' || b == '\n' {
-			return string(buf[:i])
-		}
-	}
-	return string(buf)
+// Use net/http for fragmented headers and chunked/content-length framing, with a
+// bounded header reader so a broken peer cannot grow header memory indefinitely.
+func readTransferResponse(c net.Conn) (*http.Response, error) {
+	limited := &io.LimitedReader{R: c, N: 64 << 10}
+	resp, err := http.ReadResponse(bufio.NewReaderSize(limited, 32<<10), nil)
+	limited.N = 1<<63 - 1
+	return resp, err
 }
 
-func hasHTTP11Prefix(line string) bool {
-	return len(line) >= 7 && line[0] == 'H' && line[1] == 'T' && line[2] == 'T' && line[3] == 'P' &&
-		line[4] == '/' && line[5] == '1' && line[6] == '.'
-}
-
-func statusCode(firstLine string) int {
-	fs := splitFields(firstLine)
-	if len(fs) < 2 {
-		return 0
-	}
-	code := 0
-	for _, r := range fs[1] {
-		if r < '0' || r > '9' {
-			break
-		}
-		code = code*10 + int(r-'0')
-	}
-	return code
-}
-
-func splitFields(s string) []string {
-	var out []string
-	start := -1
-	for i := 0; i <= len(s); i++ {
-		if i == len(s) || s[i] == ' ' || s[i] == '\t' {
-			if start >= 0 {
-				out = append(out, s[start:i])
-				start = -1
-			}
-		} else if start < 0 {
-			start = i
-		}
-	}
-	return out
-}
-
-// downloadWorker 裸 TCP 下载：GET /speed/File(1G).dl，64KB 读缓冲，
-// 连接级 30s 截止 + 单读 3s 截止，字节计入 counter。
+// Reopen a completed finite file for the remaining phase rather than losing a lane.
 func downloadWorker(ctx context.Context, s Node, uuid string, counter *byteCounter) {
-	addr := hostPort(s.HostIP, s.Port)
-	path := fmt.Sprintf("/speed/File(1G).dl?r=%d&key=%s", time.Now().Unix(), uuid)
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\nAccept: */*\r\nConnection: close\r\nUser-Agent: %s\r\nHost:%s\r\n\r\n",
-		path, uaBrowser, addr)
-	c, err := net.DialTimeout("tcp", addr, 8*time.Second)
-	if err != nil {
-		return
-	}
-	defer c.Close()
-	if tc, ok := c.(*net.TCPConn); ok {
-		_ = tc.SetNoDelay(true)
-	}
-	_ = c.SetDeadline(time.Now().Add(30 * time.Second))
-	if _, err := c.Write([]byte(req)); err != nil {
-		return
-	}
-	buf := make([]byte, 0, 8192)
-	tmp := make([]byte, 65536)
-	headerDone := false
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
-		n, err := c.Read(tmp)
-		if n > 0 {
-			if !headerDone {
-				buf = append(buf, tmp[:n]...)
-				code, off, ok := parseHTTPHeader(buf)
-				if !ok {
-					if err != nil {
-						return
-					}
-					continue
-				}
-				if code < 200 || code >= 400 {
-					return
-				}
-				if len(buf) > off {
-					counter.add(len(buf) - off)
-				}
-				headerDone = true
-				buf = nil
-			} else {
-				counter.add(n)
-			}
-		}
-		if err != nil {
+	buf := make([]byte, transferBufferSize)
+	for ctx.Err() == nil {
+		n, err := downloadTransfer(ctx, s, uuid, counter, buf)
+		if err != nil || n == 0 {
 			return
 		}
 	}
 }
 
-// uploadWorker 裸 TCP 上传：POST multipart 谎报 Content-Length 循环写 16KB 随机块。
-func uploadWorker(ctx context.Context, s Node, uuid string, counter *byteCounter) {
+func downloadTransfer(ctx context.Context, s Node, uuid string, counter *byteCounter, buf []byte) (int64, error) {
+	c, closeConn, err := dialTransfer(ctx, s)
+	if err != nil {
+		return 0, err
+	}
+	defer closeConn()
 	addr := hostPort(s.HostIP, s.Port)
-	fn := time.Now().Format("SPEED_20060102_150405.000")
-	header := fmt.Sprintf(
-		"POST /speed/doAnalsLoad.do HTTP/1.1\r\nConnection: close\r\nCache-Control: no-cache\r\nCharset: UTF-8\r\nKey: %s\r\nContent-Type: multipart/form-data;boundary=%s\r\nUser-Agent: %s\r\nHost: %s\r\nAccept-Encoding: gzip\r\nContent-Length: 900000000\r\n\r\n--%s\r\nContent-Disposition: form-data; name=\"upload\";filename=\"%s\"\r\n\r\n",
-		uuid, boundary, uaUpload, addr, boundary, fn,
-	)
-	payload := make([]byte, 16384)
-	_, _ = rand.Read(payload)
-	c, err := net.DialTimeout("tcp", addr, 8*time.Second)
+	req := fmt.Sprintf("GET /speed/File(1G).dl?r=%d&key=%s HTTP/1.1\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\nUser-Agent: %s\r\nHost: %s\r\n\r\n", time.Now().UnixNano(), uuid, uaBrowser, addr)
+	var next time.Time
+	refreshDeadline(c, ctx, &next, false)
+	if _, err = io.WriteString(c, req); err != nil {
+		return 0, err
+	}
+	next = time.Time{}
+	refreshDeadline(c, ctx, &next, true)
+	resp, err := readTransferResponse(c)
 	if err != nil {
-		return
+		return 0, err
 	}
-	defer c.Close()
-	if tc, ok := c.(*net.TCPConn); ok {
-		_ = tc.SetNoDelay(true)
+	// Close the connection before Body.Close on error; never drain an untrusted body.
+	defer func() { _ = c.Close(); _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || (resp.Header.Get("Content-Encoding") != "" && resp.Header.Get("Content-Encoding") != "identity") {
+		return 0, fmt.Errorf("invalid download response: %s", resp.Status)
 	}
-	_ = c.SetDeadline(time.Now().Add(30 * time.Second))
-	n, err := c.Write([]byte(header))
-	if err != nil {
-		return
-	}
-	counter.add(n)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		_ = c.SetWriteDeadline(time.Now().Add(3 * time.Second))
-		n, err := c.Write(payload)
-		if n > 0 {
-			counter.add(n)
+	var total int64
+	for ctx.Err() == nil {
+		refreshDeadline(c, ctx, &next, true)
+		n, err := resp.Body.Read(buf)
+		counter.add(n)
+		total += int64(n)
+		if err == io.EOF {
+			return total, nil
 		}
 		if err != nil {
+			return total, err
+		}
+	}
+	return total, ctx.Err()
+}
+
+func uploadWorker(ctx context.Context, s Node, uuid string, counter *byteCounter) {
+	payload := uploadPayload()
+	for ctx.Err() == nil {
+		if err := uploadTransfer(ctx, s, uuid, counter, payload, uploadContentLength); err != nil {
 			return
 		}
 	}
+}
+
+// Keep the server's original 900 MB request size but honor its Content-Length,
+// finish multipart framing, consume its status, then open the next request.
+func uploadTransfer(ctx context.Context, s Node, uuid string, counter *byteCounter, payload []byte, contentLength int64) error {
+	preamble := fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"upload\";filename=\"%s\"\r\n\r\n", boundary, time.Now().Format("SPEED_20060102_150405.000"))
+	footer := "\r\n--" + boundary + "--\r\n"
+	remaining := contentLength - int64(len(preamble)+len(footer))
+	if remaining <= 0 || len(payload) == 0 {
+		return fmt.Errorf("invalid upload body size")
+	}
+	c, closeConn, err := dialTransfer(ctx, s)
+	if err != nil {
+		return err
+	}
+	defer closeConn()
+	// Read concurrently so an early rejection stops writes rather than being
+	// misreported as throughput just because the local socket accepted bytes.
+	response := make(chan struct{})
+	var responseErr error
+	go func() {
+		resp, err := readTransferResponse(c)
+		if err == nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+			err = fmt.Errorf("upload rejected: %s", resp.Status)
+		}
+		_ = c.Close()
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		responseErr = err
+		close(response)
+	}()
+	defer func() { _ = c.Close(); <-response }()
+	header := fmt.Sprintf("POST /speed/doAnalsLoad.do HTTP/1.1\r\nConnection: close\r\nCache-Control: no-cache\r\nCharset: UTF-8\r\nKey: %s\r\nContent-Type: multipart/form-data;boundary=%s\r\nUser-Agent: %s\r\nHost: %s\r\nContent-Length: %d\r\n\r\n%s", uuid, boundary, uaUpload, hostPort(s.HostIP, s.Port), contentLength, preamble)
+	var next time.Time
+	refreshDeadline(c, ctx, &next, false)
+	if _, err = io.WriteString(c, header); err != nil {
+		return err
+	}
+	for remaining > 0 && ctx.Err() == nil {
+		refreshDeadline(c, ctx, &next, false)
+		size := min(int64(len(payload)), remaining)
+		n, err := c.Write(payload[:int(size)])
+		counter.add(n) // Payload only; no HTTP or multipart framing.
+		remaining -= int64(n)
+		if err != nil {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(c, footer); err != nil {
+		return err
+	}
+	// A completed body needs an acknowledgement before another request is started.
+	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	<-response
+	return responseErr
 }
 
 // avgTop3 取最高的至多 3 个采样点的均值 —— 官方口径的最终速率。
@@ -219,73 +229,67 @@ func avgTop3(speeds []float64) float64 {
 	return sum / float64(n)
 }
 
-// runPhase 跑一个方向/线程数的测速阶段：
-// 500ms tick 采样，跳过前 2s 预热，avgTop3 平滑；
-// 每个计入的 tick 通过 onSample 推送瞬时速率（窗口平滑值，与最终口径一致）。
+// runPhase samples per-worker counters against actual monotonic time. All lanes
+// start together; no traffic from a cancelled phase can leak into the next one.
 func runPhase(ctx context.Context, s Node, uuid string, down bool, threads, lengthS, intervalMS int, onSample func(index, total int, speedMbps, elapsedS float64)) float64 {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var counter byteCounter
+	opts := Options{LengthS: lengthS, IntervalMS: intervalMS, DownThreads: threads, UpThreads: threads}
+	opts.fill()
+	lengthS, intervalMS, threads = opts.LengthS, opts.IntervalMS, opts.DownThreads
+	interval := time.Duration(intervalMS) * time.Millisecond
+	preheat := 2 * time.Second
+	duration := time.Duration(lengthS) * time.Second
+	start := time.Now()
+	ctx, cancel := context.WithDeadline(ctx, start.Add(preheat+duration))
+	counters := make([]byteCounter, threads)
 	var wg sync.WaitGroup
-	for i := 0; i < threads; i++ {
+	defer func() { cancel(); wg.Wait() }()
+	for i := range counters {
 		wg.Add(1)
-		go func() {
+		go func(counter *byteCounter) {
 			defer wg.Done()
 			if down {
-				downloadWorker(ctx, s, uuid, &counter)
+				downloadWorker(ctx, s, uuid, counter)
 			} else {
-				uploadWorker(ctx, s, uuid, &counter)
+				uploadWorker(ctx, s, uuid, counter)
 			}
-		}()
-		time.Sleep(40 * time.Millisecond)
+		}(&counters[i])
 	}
-	points := (lengthS * 1000) / intervalMS
-	if points < 1 {
-		points = 1
-	}
-	preheat := 2000 / intervalMS
-	if preheat < 1 {
-		preheat = 1
-	}
-	var lastDelta, lastTotal int64
-	var samples []float64
-	ticker := time.NewTicker(time.Duration(intervalMS) * time.Millisecond)
+	points := max(1, int(duration/interval))
+	samples := make([]float64, 0, points)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	measured := 0
-	for index := 1; index <= points+preheat; index++ {
+	lastTime := start
+	var lastTotal, lastDelta int64
+	var lastDuration time.Duration
+	sample := func(now time.Time) {
+		var total int64
+		for i := range counters {
+			total += counters[i].snap()
+		}
+		delta := total - lastTotal
+		elapsed := now.Sub(lastTime)
+		speed := calcMbps(lastDelta+delta, float64(lastDuration+elapsed)/float64(time.Millisecond))
+		lastTotal, lastDelta, lastDuration, lastTime = total, delta, elapsed, now
+		if now.Sub(start) < preheat+interval || len(samples) >= points {
+			return
+		}
+		samples = append(samples, speed)
+		if onSample != nil {
+			// Keep zero-based graph timestamps while using real elapsed time for rates.
+			measured := max(0, now.Sub(start)-preheat-interval)
+			onSample(len(samples)-1, points, speed, measured.Seconds())
+		}
+	}
+	for {
 		select {
 		case <-ctx.Done():
-			cancel()
+			// Include the final interval (ticker and deadline can become ready together).
+			if ctx.Err() == context.DeadlineExceeded && time.Since(lastTime) >= interval/2 {
+				sample(time.Now())
+			}
 			return avgTop3(samples)
 		case <-ticker.C:
-		}
-		total := counter.snap()
-		delta := total - lastTotal
-		if delta < 0 {
-			delta = 0
-		}
-		lastTotal = total
-		var speed float64
-		if lastDelta > 0 {
-			speed = calcMbps(lastDelta+delta, float64(intervalMS*2))
-		} else {
-			speed = calcMbps(delta, float64(intervalMS))
-		}
-		lastDelta = delta
-		if index > preheat {
-			if onSample != nil {
-				onSample(measured, points, speed, float64(measured*intervalMS)/1000.0)
-			}
-			measured++
-			samples = append(samples, speed)
+			sample(time.Now())
 		}
 	}
-	cancel()
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(1 * time.Second):
-	}
-	return avgTop3(samples)
 }

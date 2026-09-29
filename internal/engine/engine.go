@@ -303,6 +303,14 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 							cb.OnSample(s)
 						}
 					})
+				if ctx.Err() != nil {
+					fr.Error = ctx.Err().Error()
+					return
+				}
+				if mbps <= 0 {
+					fr.Error = PhaseLabel(ph, f.name) + "未收到有效测速数据，请更换节点"
+					return
+				}
 				fr.Phases = append(fr.Phases, PhaseResult{Phase: ph, Mbps: mbps})
 				emit(cb, stage, PhaseLabel(ph, f.name)+"完成", phaseBase+span*float64(pi+1))
 			}

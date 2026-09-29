@@ -65,20 +65,6 @@ func TestHostPort(t *testing.T) {
 	}
 }
 
-func TestParseHTTPHeader(t *testing.T) {
-	ok := []byte("HTTP/1.1 206 Partial Content\r\nContent-Length: 5\r\n\r\nHELLO")
-	code, off, found := parseHTTPHeader(ok)
-	if !found || code != 206 || off != len(ok)-5 || string(ok[off:]) != "HELLO" {
-		t.Errorf("code=%d off=%d found=%v", code, off, found)
-	}
-	if _, _, found := parseHTTPHeader([]byte("HTTP/1.1 200 OK\r\nno terminator")); found {
-		t.Error("未收完头部不应判定成功")
-	}
-	if _, _, found := parseHTTPHeader([]byte("garbage\r\n\r\n")); found {
-		t.Error("非 HTTP 不应判定成功")
-	}
-}
-
 func TestParsePingOutputWindowsEnglish(t *testing.T) {
 	out := strings.Join([]string{
 		"Pinging 1.2.3.4 with 32 bytes of data:",

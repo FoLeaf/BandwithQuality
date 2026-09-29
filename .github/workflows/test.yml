@@ -1,0 +1,40 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      # The desktop shell requires platform WebView libraries; engine/store tests
+      # are platform independent and never contact public speed-test servers.
+      - run: go test ./internal/... ./cmd/...
+      - run: go vet ./internal/... ./cmd/...
+      - if: runner.os == 'Linux'
+        run: go test -race ./internal/...
+      - if: runner.os == 'Windows'
+        run: go test ./...

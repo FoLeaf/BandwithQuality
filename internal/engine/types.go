@@ -97,6 +97,15 @@ func (o *Options) fill() {
 	if o.IntervalMS < 100 {
 		o.IntervalMS = 500
 	}
+	if o.IntervalMS > 1000 {
+		o.IntervalMS = 1000
+	}
+	if o.DownThreads > 32 {
+		o.DownThreads = 32
+	}
+	if o.UpThreads > 32 {
+		o.UpThreads = 32
+	}
 	if o.DownThreads < 1 {
 		o.DownThreads = 8
 	}
