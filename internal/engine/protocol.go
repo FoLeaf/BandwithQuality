@@ -61,8 +61,12 @@ func safeStr(v any) string {
 	return strings.TrimSuffix(strings.TrimPrefix(fmt.Sprint(v), "["), "]")
 }
 
+// 显式直连：测速工具不应受系统代理环境变量干扰（与 cmd/diag 口径一致）。
+// 共享 Transport 以复用连接池。
+var noProxyTransport = &http.Transport{Proxy: nil}
+
 func httpGet(raw string, timeout time.Duration) (string, error) {
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: timeout, Transport: noProxyTransport}
 	req, err := http.NewRequest(http.MethodGet, raw, nil)
 	if err != nil {
 		return "", err
@@ -81,7 +85,7 @@ func httpGet(raw string, timeout time.Duration) (string, error) {
 }
 
 func httpPost(raw string, timeout time.Duration) (string, error) {
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: timeout, Transport: noProxyTransport}
 	req, err := http.NewRequest(http.MethodPost, raw, strings.NewReader(""))
 	if err != nil {
 		return "", err

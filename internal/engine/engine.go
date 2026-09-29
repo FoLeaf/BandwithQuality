@@ -145,18 +145,41 @@ func emit(cb Callbacks, stage, msg string, pct float64) {
 	}
 }
 
+// enqueueMaxTries 排队尝试的节点总数上限（主选 + 备选）。上游节点排队服务
+// 间歇性无响应（实测超时率可达 60%，且同城/同省节点更容易集体挂起），
+// 候选太少很容易全军覆没。
+const enqueueMaxTries = 6
+
+// shortEnqueueErr 把排队失败的底层错误压缩成一句话（原始错误含完整 URL，不适合直接展示）。
+func shortEnqueueErr(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "Client.Timeout") || strings.Contains(msg, "deadline exceeded"):
+		return "排队请求超时"
+	case strings.Contains(msg, "服务器忙"):
+		return "服务器忙"
+	case strings.Contains(msg, "参数错误"):
+		return "参数被拒"
+	default:
+		return "服务异常"
+	}
+}
+
 // enqueueWithFallback 首选节点排队；dovalid 超时/拒绝时自动换下一个 TCP 可达节点
-// （至多再试 2 个）。手动指定节点时 nodes 为空，只按上游的 3 次内部重试。
+// （至多再试 5 个）。手动指定节点时 nodes 为空，只按上游的 3 次内部重试。
 func enqueueWithFallback(ctx context.Context, nodes []Node, primary *Node, imei string) (string, *Node, error) {
 	tried := []*Node{primary}
 	if primary != nil {
-		for i := range nodes {
+		// 按步长跨列表取样：上游列表同城/同省靠前，顺序取会与主选高度同质，
+		// 集体挂起时全军覆没；跨列表取可分散地理命中面。
+		step := 1
+		if len(nodes) > enqueueMaxTries {
+			step = len(nodes) / enqueueMaxTries
+		}
+		for i := 0; i < len(nodes) && len(tried) < enqueueMaxTries; i += step {
 			n := &nodes[i]
 			if n.HostIP == primary.HostIP && n.Port == primary.Port {
 				continue
-			}
-			if len(tried) >= 3 {
-				break
 			}
 			if tcpOK(n.HostIP, n.Port) {
 				tried = append(tried, n)
@@ -177,7 +200,10 @@ func enqueueWithFallback(ctx context.Context, nodes []Node, primary *Node, imei 
 		}
 		lastErr = err
 	}
-	return "", nil, lastErr
+	if lastErr == nil {
+		return "", nil, fmt.Errorf("无可用节点")
+	}
+	return "", nil, fmt.Errorf("节点排队失败：已尝试 %d 个节点均未成功（%s），上游排队服务可能暂时不稳定，请稍后重试或手动更换节点", len(tried), shortEnqueueErr(lastErr))
 }
 
 // RunTest 执行一次完整测速：出口探测 → 选点 → 排队 → 时延 → 各阶段吞吐 → 退队。
