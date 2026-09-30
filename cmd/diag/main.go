@@ -26,11 +26,6 @@ var ctrlServers = []string{
 }
 
 // 显式不走任何代理，排除环境变量干扰
-var client = &http.Client{
-	Timeout:   25 * time.Second,
-	Transport: &http.Transport{Proxy: nil},
-}
-
 func get(raw string, timeout time.Duration) (string, error) {
 	c := &http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: nil}}
 	req, _ := http.NewRequest("GET", raw, nil)
@@ -156,22 +151,13 @@ func main() {
 			c.Close()
 		}
 
-		// 4. HTTPS 变体
-		if strings.HasPrefix(base, "https://") || true {
-			t0 = time.Now()
-			hbody, herr := get(fmt.Sprintf("https://%s:%s/speed/dovalid?key=&flag=true&bandwidth=200&model=Android&imei=TSDIAG0000000001&time=%s&app=globalspeed&token=diag&pkg=%s", host, port, ts, pkgName), 8*time.Second)
-			if herr != nil {
-				fmt.Printf("  dovalid-https(8s): 失败，耗时 %v → %v\n", time.Since(t0).Round(time.Millisecond), herr)
-			} else {
-				fmt.Printf("  dovalid-https(8s): 成功，耗时 %v → body=%q\n", time.Since(t0).Round(time.Millisecond), strings.TrimSpace(hbody[:min(120, len(hbody))]))
-			}
+		// 4. HTTPS 变体：无论控制面协议，节点侧 HTTPS 也测一遍
+		t0 = time.Now()
+		hbody, herr := get(fmt.Sprintf("https://%s:%s/speed/dovalid?key=&flag=true&bandwidth=200&model=Android&imei=TSDIAG0000000001&time=%s&app=globalspeed&token=diag&pkg=%s", host, port, ts, pkgName), 8*time.Second)
+		if herr != nil {
+			fmt.Printf("  dovalid-https(8s): 失败，耗时 %v → %v\n", time.Since(t0).Round(time.Millisecond), herr)
+		} else {
+			fmt.Printf("  dovalid-https(8s): 成功，耗时 %v → body=%q\n", time.Since(t0).Round(time.Millisecond), strings.TrimSpace(hbody[:min(120, len(hbody))]))
 		}
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

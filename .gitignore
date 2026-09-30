@@ -12,6 +12,7 @@ vendor/
 
 # Wails
 frontend/wailsjs/
+frontend/package.json.md5
 
 # IDE
 .idea/
