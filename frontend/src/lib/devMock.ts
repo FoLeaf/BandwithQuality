@@ -89,6 +89,10 @@ function curve(elapsedS: number, peak: number): number {
   return Math.max(1, peak * (0.25 + 0.75 * ramp) * wobble)
 }
 
+// 模拟真实引擎：连接建立初期（预热后头几个采样）速度为 0，
+// 前端曲线会把首个非零采样对齐到 0s，与真机行为一致便于调试。
+const LEAD_ZERO_SAMPLES = 2
+
 /** 与引擎口径一致：取最高 3 个采样的均值 */
 function top3Avg(xs: number[]): number {
   const top = [...xs].sort((a, b) => b - a).slice(0, 3)
@@ -145,7 +149,8 @@ export function mockStartTest(opts: Options): Promise<TestResult> {
     for (let k = 1; k <= n; k++) {
       const elapsedS = +((k * intervalMs) / 1000).toFixed(2)
       at(phaseStart + preheatMs + k * intervalMs, () => {
-        const s: Sample = { family: famName, phase, index: k, elapsedS, speedMbps: +curve(elapsedS, peak).toFixed(2) }
+        const speed = k <= LEAD_ZERO_SAMPLES ? 0 : +curve(elapsedS, peak).toFixed(2)
+        const s: Sample = { family: famName, phase, index: k, elapsedS, speedMbps: speed }
         ;(samplesByPhase[phase] ??= []).push(s)
         fire(subs.sample, s)
       })

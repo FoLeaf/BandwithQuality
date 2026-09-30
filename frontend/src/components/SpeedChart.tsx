@@ -39,19 +39,34 @@ interface Point {
 }
 
 /**
- * 引擎的 elapsedS 每个相位独立从 0 计时，直接作为 X：所有相位共用同一条
- * 0~Ns 时间轴、各自从 0s 出发叠加，同 X 不同 Y，便于相位间横向对比。
+ * 引擎的 elapsedS 每个相位从「相位启动」（时延测完 + 预热）起计，连接建立
+ * 初期速度为 0。这里把每个相位首个速度非零的采样对齐到 0s：曲线的 0s =
+ * 速度真正开始出现的时刻，其前的全零预热采样不占时间轴。所有相位仍共用
+ * 同一条 0~Ns 秒轴、各自从 0s 出发叠加，同 X 不同 Y，便于相位间横向对比。
  */
 function buildTimeline(samples: Sample[]): Point[] {
   const rank = new Map(PHASE_ORDER.map((p, i) => [p, i]))
   const sorted = samples
     .slice()
     .sort((a, b) => (rank.get(a.phase) ?? 9) - (rank.get(b.phase) ?? 9) || a.index - b.index)
-  return sorted.map((s) => ({
-    x: +s.elapsedS.toFixed(2),
-    y: Math.max(0, Number(s.speedMbps.toFixed(2))),
-    phase: s.phase,
-  }))
+  // 每相位首个非零采样的 elapsedS，作为该相位的 0s 基准
+  const base = new Map<string, number>()
+  for (const s of sorted) {
+    if (s.speedMbps > 0 && !base.has(s.phase)) base.set(s.phase, s.elapsedS)
+  }
+  const out: Point[] = []
+  for (const s of sorted) {
+    const b = base.get(s.phase)
+    const y = Math.max(0, Number(s.speedMbps.toFixed(2)))
+    if (b == null) {
+      // 整相位速度全零（未测出数据）：按原始 elapsedS 保留平线
+      out.push({ x: +s.elapsedS.toFixed(2), y, phase: s.phase })
+    } else if (s.elapsedS >= b) {
+      // 基准对齐 0s；首个非零采样之前的预热零值丢弃
+      out.push({ x: +(s.elapsedS - b).toFixed(2), y, phase: s.phase })
+    }
+  }
+  return out
 }
 
 /** 横轴刻度：步长从常用档位里取能容纳 ≤5 格的最小值 */
