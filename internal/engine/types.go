@@ -144,7 +144,7 @@ type Progress struct {
 	JitterMS  *float64 `json:"jitterMs,omitempty"`
 }
 
-// PhaseResult 单个阶段的最终速率（avgTop3 口径，与官方客户端一致）。
+// PhaseResult 单个阶段的最终速率（剔除最慢 30% 采样后的均值，反映可持续带宽）。
 type PhaseResult struct {
 	Phase string  `json:"phase"`
 	Mbps  float64 `json:"mbps"`

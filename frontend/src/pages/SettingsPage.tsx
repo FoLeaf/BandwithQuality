@@ -126,7 +126,7 @@ export function SettingsPage({ settings, onPatchSettings }: SettingsPageProps) {
         </CardHeader>
         <CardContent className="text-muted-foreground space-y-1.5 text-sm">
           <p>BandwithQuality — 高性能、简洁的网络带宽测试桌面工具。</p>
-          <p>500ms 采样、跳过预热段、取最高 3 个采样均值作为最终速率。</p>
+          <p>500ms 采样、跳过预热段；最终速率剔除最慢 30% 采样后取均值，贴近可持续带宽。</p>
         </CardContent>
       </Card>
     </div>

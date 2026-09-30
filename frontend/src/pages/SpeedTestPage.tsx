@@ -514,7 +514,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
                     className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs transition-colors"
                   >
                     <ChevronRight className={cn("size-3.5 transition-transform", curveOpen && "rotate-90")} />
-                    完整曲线（500ms 采样，最终数值取最高 3 个采样的均值）
+                    完整曲线（500ms 采样，最终速率剔除最慢 30% 采样后取均值）
                   </button>
                   <Collapse open={curveOpen}>
                     <div className="pt-2">
@@ -547,8 +547,9 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
         )}
       </Collapse>
 
-      {/* 工作区（idle）：分段控件 + 出口/节点信息；测速中与结果态整体收起 */}
-      <Collapse open={run === "idle"}>
+      {/* 工作区（idle + 结果态）：分段控件随时可改，供下一次测速选择；
+          出口/节点信息只在 idle 展示（结果态数据区里已有本轮实际节点，避免重复） */}
+      <Collapse open={run === "idle" || dataOpen}>
         <div className="space-y-4 pt-1">
           <div className="flex items-stretch justify-center gap-2">
             <RubberSegment
@@ -569,14 +570,16 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
             />
           </div>
 
-          <InfoCluster
-            client={location}
-            ipv6OK={ipv6OK}
-            node={pickedNode ?? autoNode}
-            nodeLoading={autoNodeLoading}
-            onSwitch={() => setPickerOpen(true)}
-            switchDisabled={running || !location}
-          />
+          {run === "idle" && (
+            <InfoCluster
+              client={location}
+              ipv6OK={ipv6OK}
+              node={pickedNode ?? autoNode}
+              nodeLoading={autoNodeLoading}
+              onSwitch={() => setPickerOpen(true)}
+              switchDisabled={running || !location}
+            />
+          )}
 
           {(family === "v6" || family === "both") && ipv6OK === false && (
             <p className="text-muted-foreground text-center text-xs">

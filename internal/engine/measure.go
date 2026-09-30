@@ -291,29 +291,32 @@ func uploadTransfer(ctx context.Context, s Node, uuid string, counter *byteCount
 	return responseErr
 }
 
-// avgTop3 取最高的至多 3 个采样点的均值 —— 官方口径的最终速率。
-func avgTop3(speeds []float64) float64 {
-	if len(speeds) == 0 {
+// sustainedMbps 最终速率：剔除最慢 30% 的采样（预热爬坡残余与瞬时拥塞谷底），
+// 对剩余最快的 70% 取均值。相比「最高 3 个采样均值」不再奖励单次瞬时突发，
+// 更贴近可持续占用的带宽质量；采样不足 4 个时不剔除。
+func sustainedMbps(speeds []float64) float64 {
+	n := len(speeds)
+	if n == 0 {
 		return 0
 	}
 	cp := append([]float64(nil), speeds...)
 	// 插入排序：采样数很小（十几个），且避免引入 sort 的额外拷贝
-	for i := 0; i < len(cp); i++ {
-		for j := i + 1; j < len(cp); j++ {
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
 			if cp[j] < cp[i] {
 				cp[i], cp[j] = cp[j], cp[i]
 			}
 		}
 	}
-	n := 3
-	if len(cp) < n {
-		n = len(cp)
+	drop := 0
+	if n >= 4 {
+		drop = max(1, n*3/10)
 	}
 	sum := 0.0
-	for _, v := range cp[len(cp)-n:] {
+	for _, v := range cp[drop:] {
 		sum += v
 	}
-	return sum / float64(n)
+	return sum / float64(n-drop)
 }
 
 // runPhase samples per-worker counters against actual monotonic time. All lanes
@@ -374,7 +377,7 @@ func runPhase(ctx context.Context, s Node, uuid string, down bool, threads, leng
 			if ctx.Err() == context.DeadlineExceeded && time.Since(lastTime) >= interval/2 {
 				sample(time.Now())
 			}
-			return avgTop3(samples)
+			return sustainedMbps(samples)
 		case <-ticker.C:
 			sample(time.Now())
 		}

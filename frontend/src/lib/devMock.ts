@@ -93,10 +93,13 @@ function curve(elapsedS: number, peak: number): number {
 // 前端曲线会把首个非零采样对齐到 0s，与真机行为一致便于调试。
 const LEAD_ZERO_SAMPLES = 2
 
-/** 与引擎口径一致：取最高 3 个采样的均值 */
-function top3Avg(xs: number[]): number {
-  const top = [...xs].sort((a, b) => b - a).slice(0, 3)
-  return top.length ? +(top.reduce((a, b) => a + b, 0) / top.length).toFixed(2) : 0
+/** 与引擎口径一致：剔除最慢 30% 采样（不足 4 个不剔）后取均值 */
+function sustainedAvg(xs: number[]): number {
+  if (!xs.length) return 0
+  const sorted = [...xs].sort((a, b) => a - b)
+  const drop = sorted.length >= 4 ? Math.max(1, Math.floor(sorted.length * 0.3)) : 0
+  const keep = sorted.slice(drop)
+  return +(keep.reduce((a, b) => a + b, 0) / keep.length).toFixed(2)
 }
 
 export function mockStartTest(opts: Options): Promise<TestResult> {
@@ -160,7 +163,7 @@ export function mockStartTest(opts: Options): Promise<TestResult> {
 
   at((t += 500), () => {
     const fam = result.families[0]
-    fam.phases = phases.map((p) => ({ phase: p, mbps: top3Avg((samplesByPhase[p] ?? []).map((s) => s.speedMbps)) }))
+    fam.phases = phases.map((p) => ({ phase: p, mbps: sustainedAvg((samplesByPhase[p] ?? []).map((s) => s.speedMbps)) }))
     fam.samples = phases.flatMap((p) => samplesByPhase[p] ?? [])
     result.durationS = +(t / 1000).toFixed(1)
     fire(subs.progress, { stage: "done", message: "测速完成", percent: 100 })

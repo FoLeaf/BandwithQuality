@@ -29,11 +29,16 @@ func TestCalcMbps(t *testing.T) {
 	}
 }
 
-func TestAvgTop3(t *testing.T) {
-	almost(t, "top3", avgTop3([]float64{1, 9, 5, 7, 3}), 7) // (9+7+5)/3
-	almost(t, "短序列", avgTop3([]float64{4, 6}), 5)
-	almost(t, "单点", avgTop3([]float64{2}), 2)
-	if avgTop3(nil) != 0 {
+func TestSustainedMbps(t *testing.T) {
+	// 5 个采样剔 1 个最慢：(3+5+7+9)/4
+	almost(t, "剔除最慢30%", sustainedMbps([]float64{1, 9, 5, 7, 3}), 6)
+	// 采样不足 4 个不剔除，直接均值
+	almost(t, "三采样不剔", sustainedMbps([]float64{1, 2, 3}), 2)
+	almost(t, "短序列", sustainedMbps([]float64{4, 6}), 5)
+	almost(t, "单点", sustainedMbps([]float64{2}), 2)
+	// 一次谷底不该把可持续速率拉低：{10,100×5} 剔 10 后仍是 100
+	almost(t, "谷底剔除", sustainedMbps([]float64{100, 100, 10, 100, 100, 100}), 100)
+	if sustainedMbps(nil) != 0 {
 		t.Error("空序列应为 0")
 	}
 }
