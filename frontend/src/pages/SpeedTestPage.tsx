@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowDown, ArrowUp, ChevronRight, Server, User } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, ChevronRight, Server, User, Waves } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -21,6 +21,7 @@ import {
   startTest,
   stopTest,
 } from "@/lib/api"
+import { useCountUp, useSmoothedValue } from "@/lib/useSmoothed"
 import type {
   ClientLocation,
   Node,
@@ -75,8 +76,12 @@ function Collapse({ open, children }: { open: boolean; children: React.ReactNode
 
 /** 数据区大数字卡（下载/上传），结果页与 running 实时区共用 */
 function BigStat({ label, up, mbps }: { label: string; up?: boolean; mbps: number }) {
-  const gbps = mbps >= 1000
-  const value = mbps < 0 ? "-" : gbps ? (mbps / 1000).toFixed(2) : mbps.toFixed(mbps >= 100 ? 1 : 2)
+  // 与仪表盘共用同一套 rAF 平滑：目标值 500ms 一跳，显示值逐帧追赶，
+  // 卡片数字与表盘读数同频连续变化，而不是每 500ms 硬切一次。
+  const smooth = useSmoothedValue(mbps)
+  const v = Math.max(0, smooth)
+  const gbps = v >= 1000
+  const value = smooth < 0 ? "-" : gbps ? (v / 1000).toFixed(2) : v.toFixed(v >= 100 ? 1 : 2)
   return (
     <Card>
       <CardContent className="px-4 pt-3.5 pb-3">
@@ -84,12 +89,45 @@ function BigStat({ label, up, mbps }: { label: string; up?: boolean; mbps: numbe
           {up ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />}
           {label}
         </div>
-        <div className={cn("tabular mt-1.5 text-[32px] leading-none font-semibold tracking-tight", mbps < 0 ? "text-muted-foreground" : speedTone(mbps))}>
+        <div className={cn("tabular mt-1.5 text-[32px] leading-none font-semibold tracking-tight", smooth < 0 ? "text-muted-foreground" : speedTone(v))}>
           {value}
           <span className="text-muted-foreground ml-1.5 text-sm font-normal">{gbps ? "Gbps" : "Mbps"}</span>
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+/** 时延/抖动指标胶囊：测量中呼吸态，测出后弹入并把数字滚到最终值 */
+function MetricChip({
+  icon: Icon,
+  label,
+  value,
+  delayMs = 0,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: number | null
+  delayMs?: number
+}) {
+  const shown = useCountUp(value ?? 0)
+  return (
+    <div
+      className="bg-card border-border/70 metric-pop flex items-center gap-1.5 rounded-full border px-3 py-1.5"
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      <Icon
+        className={cn("size-3.5 shrink-0", value == null ? "text-muted-foreground metric-breathe" : "text-primary")}
+      />
+      <span className="text-muted-foreground shrink-0 text-xs">{label}</span>
+      {value == null ? (
+        <span className="text-muted-foreground/70 metric-breathe min-w-[4em] text-left text-xs">测量中…</span>
+      ) : (
+        <span key={value} className="metric-value-in tabular min-w-[4em] text-left text-sm font-semibold">
+          {fmtMs(shown)}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -176,6 +214,9 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
   const [liveAll, setLiveAll] = useState<Sample[]>([]) // 本轮全部采样（实时曲线）
   const [liveDir, setLiveDir] = useState({ down: -1, up: -1 }) // 两个方向的最新瞬时速率
   const [livePhase, setLivePhase] = useState("")
+  // 时延/抖动：latency 阶段亮「测量中」，latency_done 事件携带测得值（V4+V6 第二轮会再来一次）
+  const [metrics, setMetrics] = useState<{ latencyMs: number; jitterMs: number } | null>(null)
+  const [measureLive, setMeasureLive] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
   // 数据区退出动画期间保留的内容副本：result 清空后 Collapse 收起时仍有东西可显示
   const [shownResult, setShownResult] = useState<TestResult | null>(null)
@@ -208,6 +249,14 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
     if (!inWails()) return
     onProgress((p) => {
       setProgress(p)
+      if (p.stage === "latency") {
+        setMeasureLive(true)
+      } else if (p.stage === "latency_done") {
+        setMeasureLive(false)
+        if (p.latencyMs != null) {
+          setMetrics({ latencyMs: p.latencyMs, jitterMs: p.jitterMs ?? -1 })
+        }
+      }
     })
     phaseRef.current = ""
     onSample((s) => {
@@ -243,6 +292,8 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
       setLiveAll([])
       setLiveDir({ down: -1, up: -1 })
       setLivePhase("")
+      setMetrics(null)
+      setMeasureLive(false)
       setProgress({ stage: "", message: "", percent: 0 })
       if (msg === "测速已取消") toast.info("测速已取消")
     })
@@ -279,6 +330,8 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
     setLiveAll([])
     setLiveDir({ down: -1, up: -1 })
     setLivePhase("")
+    setMetrics(null)
+    setMeasureLive(false)
     setProgress({ stage: "probe", message: "准备测速…", percent: 0 })
     setRun("running")
     runRef.current = true
@@ -369,6 +422,17 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
       {/* running 实时区：上下行瞬时速率卡片 + 实时绘制的曲线 */}
       {running && (
         <div className="animate-in fade-in slide-in-from-bottom-2 mt-3 w-full space-y-3 duration-500">
+          {(measureLive || metrics) && (
+            <div
+              className={cn(
+                "flex justify-center gap-2 transition-opacity duration-300",
+                measureLive && metrics && "opacity-60",
+              )}
+            >
+              <MetricChip icon={Activity} label="时延" value={metrics?.latencyMs ?? null} />
+              <MetricChip icon={Waves} label="抖动" value={metrics?.jitterMs ?? null} delayMs={120} />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <BigStat label="下载" mbps={liveDir.down} />
             <BigStat label="上传" up mbps={liveDir.up} />

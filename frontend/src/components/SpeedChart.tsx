@@ -39,24 +39,19 @@ interface Point {
 }
 
 /**
- * 引擎的 elapsedS 每个相位归零，直接绘制会让各相位叠在 0~5s 区间。
- * 这里按 PHASE_ORDER 把相位串成一条连续时间轴：后一相位接着前一相位的末尾。
+ * 引擎的 elapsedS 每个相位独立从 0 计时，直接作为 X：所有相位共用同一条
+ * 0~Ns 时间轴、各自从 0s 出发叠加，同 X 不同 Y，便于相位间横向对比。
  */
 function buildTimeline(samples: Sample[]): Point[] {
-  const sorted = samples.slice().sort((a, b) => a.index - b.index)
-  const phases = PHASE_ORDER.filter((p) => sorted.some((s) => s.phase === p))
-  const out: Point[] = []
-  let offset = 0
-  for (const p of phases) {
-    const pts = sorted.filter((s) => s.phase === p)
-    let span = 0
-    for (const s of pts) {
-      span = Math.max(span, s.elapsedS)
-      out.push({ x: +(offset + s.elapsedS).toFixed(2), y: Math.max(0, Number(s.speedMbps.toFixed(2))), phase: p })
-    }
-    offset += Math.max(span, 0.5)
-  }
-  return out
+  const rank = new Map(PHASE_ORDER.map((p, i) => [p, i]))
+  const sorted = samples
+    .slice()
+    .sort((a, b) => (rank.get(a.phase) ?? 9) - (rank.get(b.phase) ?? 9) || a.index - b.index)
+  return sorted.map((s) => ({
+    x: +s.elapsedS.toFixed(2),
+    y: Math.max(0, Number(s.speedMbps.toFixed(2))),
+    phase: s.phase,
+  }))
 }
 
 /** 横轴刻度：步长从常用档位里取能容纳 ≤5 格的最小值 */
@@ -68,11 +63,11 @@ function xTicks(max: number): number[] {
   return ts
 }
 
-/** 速率曲线：x=整个测速过程的时间轴（相位顺序累进），y=Mbps */
+/** 速率曲线：x=各相位共享的秒轴（每相位从 0s 出发叠加），y=Mbps */
 export function SpeedChart({ samples, height = 220, maxMbps = 0, colorByPhase = false, color = "var(--chart-1)" }: SpeedChartProps) {
   const data = useMemo(() => buildTimeline(samples), [samples])
 
-  const xMax = useMemo(() => Math.max(2, Math.ceil(data.length ? data[data.length - 1].x : 0)), [data])
+  const xMax = useMemo(() => Math.max(2, Math.ceil(data.reduce((m, d) => Math.max(m, d.x), 0))), [data])
   const ticks = useMemo(() => xTicks(xMax), [xMax])
 
   const yMax = useMemo(() => {
