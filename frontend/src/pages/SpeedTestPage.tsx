@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Activity, ArrowDown, ArrowUp, ChevronRight, Server, User, Waves } from "lucide-react"
+import { Activity, ArrowDown, ArrowUp, ChevronRight, Server, Square, User, Waves } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { NodePickerDialog } from "@/components/NodePickerDialog"
@@ -13,7 +14,6 @@ import {
   checkIPv6,
   getLocation,
   inWails,
-  offEvents,
   onError,
   onFinish,
   onProgress,
@@ -39,6 +39,8 @@ interface SpeedTestPageProps {
   onPatchSettings: (patch: Partial<Settings>) => void
   /** 一次测速完成（写历史后）通知外层，用于底栏红点 */
   onFinished?: () => void
+  /** 运行态变化通知外层（标题栏关闭二次确认等） */
+  onRunningChange?: (running: boolean) => void
 }
 
 /** 一次测速的运行态 */
@@ -199,7 +201,7 @@ function InfoCluster({
   )
 }
 
-export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTestPageProps) {
+export function SpeedTestPage({ settings, onPatchSettings, onFinished, onRunningChange }: SpeedTestPageProps) {
   const [location, setLocation] = useState<ClientLocation | null>(null)
   const [ipv6OK, setIpv6OK] = useState<boolean | null>(null)
   const [pickedNode, setPickedNode] = useState<Node | null>(null)
@@ -228,6 +230,8 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
   // 事件接线注册在挂载时，onFinished 经 ref 转发避免闭包过期
   const onFinishedRef = useRef(onFinished)
   onFinishedRef.current = onFinished
+  const onRunningChangeRef = useRef(onRunningChange)
+  onRunningChangeRef.current = onRunningChange
 
   // 出口探测 + IPv6 检测 + 自动选点预览（只读展示，真正的选点仍在测速时进行）
   useEffect(() => {
@@ -247,7 +251,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
   // 事件接线
   useEffect(() => {
     if (!inWails()) return
-    onProgress((p) => {
+    const offProgress = onProgress((p) => {
       setProgress(p)
       if (p.stage === "latency") {
         setMeasureLive(true)
@@ -259,7 +263,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
       }
     })
     phaseRef.current = ""
-    onSample((s) => {
+    const offSample = onSample((s) => {
       setLiveAll((arr) => [...arr, s])
       if (s.phase.startsWith("up")) {
         setLiveDir((d) => ({ ...d, up: s.speedMbps }))
@@ -274,7 +278,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
         setLiveSamples((arr) => [...arr, s])
       }
     })
-    onFinish((r) => {
+    const offFinish = onFinish((r) => {
       runRef.current = false
       setRun("done")
       setResult(r)
@@ -284,7 +288,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
       holdTimer.current = window.setTimeout(() => setSettled(true), 700)
       onFinishedRef.current?.()
     })
-    onError((msg) => {
+    const offError = onError((msg) => {
       // toast 由 start() 的 catch 统一提示，这里复位状态并归零（停止/失败不进数据区）
       runRef.current = false
       setRun((prev) => (prev === "running" ? "idle" : prev))
@@ -297,8 +301,12 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
       setProgress({ stage: "", message: "", percent: 0 })
       if (msg === "测速已取消") toast.info("测速已取消")
     })
+    // 各订阅持有自己的取消函数：卸载时清理，不影响其他潜在订阅方
     return () => {
-      offEvents()
+      offProgress()
+      offSample()
+      offFinish()
+      offError()
       window.clearTimeout(holdTimer.current)
     }
   }, [])
@@ -371,17 +379,28 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
   const mode = settings?.mode ?? DEFAULT_SETTINGS.mode
   const family = settings?.family ?? DEFAULT_SETTINGS.family
 
+  // 运行态上报外层（标题栏关闭二次确认等）
+  useEffect(() => {
+    onRunningChangeRef.current?.(running)
+  }, [running])
+
+  // 结果区口径全部取自本次结果数据，与下一次测速的参数选择（mode/family）解耦：
+  // 在结果页切换「下一次」的线程模式/地址族时，本次结果不再被清空或改口径
+  const shownPhases = shownFamily?.phases.map((p) => p.phase) ?? []
+  const hasSingle = shownPhases.some((p) => p.endsWith("single"))
+  const hasMulti = shownPhases.some((p) => p.endsWith("multi"))
+  const resultMode = hasSingle && hasMulti ? "both" : hasMulti ? "multi" : hasSingle ? "single" : ""
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* 表盘簇：占满剩余空间使表盘居中，running/done 的下方内容把它顶到合适高度 */}
       <div className="flex flex-1 flex-col items-center justify-center">
-        {/* 整个大圆可点：单击开始（running 时由 runRef 拦截），双击停止 */}
+        {/* 整个大圆可点：单击开始（running 时由 runRef 拦截），停止走下方独立按钮 */}
         <button
           type="button"
-          title={running ? "双击停止测速" : "开始测速"}
+          title={running ? "测速进行中" : "开始测速"}
           disabled={startDisabled}
           onClick={() => void start()}
-          onDoubleClick={() => running && void stop()}
           className={cn(
             "group rounded-full outline-none transition-transform duration-200 active:scale-[0.985] disabled:cursor-not-allowed",
             running && "cursor-default",
@@ -407,9 +426,15 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
           />
         </button>
         {running && (
-          <p className="text-muted-foreground/60 animate-in fade-in mt-2 text-xs duration-300">
-            双击表盘停止测速
-          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="animate-in fade-in mt-1 h-8 rounded-full px-6"
+            onClick={() => void stop()}
+          >
+            <Square className="size-3.5" />
+            停止测速
+          </Button>
         )}
       </div>
 
@@ -435,6 +460,13 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
               onChange={(v) => onPatchSettings({ family: v })}
             />
           </div>
+
+          {/* 结果态下这排控件配置的是「下一次」测速，明确与本次结果划清界限 */}
+          {dataOpen && (
+            <p className="text-muted-foreground/60 -mt-2 text-center text-[10px]">
+              以上参数用于下一次测速，不影响本次结果
+            </p>
+          )}
 
           {!running && startDisabled && (
             <p className="text-muted-foreground text-center text-xs">
@@ -487,11 +519,13 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
       <Collapse open={dataOpen}>
         {shownFamily && (
           <div className="space-y-3 pt-1">
-            {/* ① 测速模式（线程模式 + 地址族） */}
+            {/* ① 测速模式（由本次结果数据推导） + 地址族 */}
             <div className="flex items-center justify-center gap-2">
-              <Badge variant="secondary" className="px-2">
-                {MODE_SHORT[mode]}
-              </Badge>
+              {resultMode && (
+                <Badge variant="secondary" className="px-2">
+                  {MODE_SHORT[resultMode]}
+                </Badge>
+              )}
               {shownResult && shownResult.families.length > 1 ? (
                 <Tabs value={resultFamily} onValueChange={setResultFamily}>
                   <TabsList className="h-7">
@@ -527,10 +561,10 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
                   switchDisabled={!location && !shownResult?.client}
                 />
 
-                {/* ③ 上下行大数字：多线程为主口径；单线程模式取单线程值 */}
+                {/* ③ 上下行大数字：多线程为主口径，缺失回退单线程（由结果数据自身决定） */}
                 <div className="grid grid-cols-2 gap-3">
-                  <BigStat label="下载" mbps={phaseMbpsOf(shownFamily, mode === "single" ? "down_single" : "down_multi")} />
-                  <BigStat label="上传" up mbps={phaseMbpsOf(shownFamily, mode === "single" ? "up_single" : "up_multi")} />
+                  <BigStat label="下载" mbps={mainMbpsOf(shownFamily, "down")} />
+                  <BigStat label="上传" up mbps={mainMbpsOf(shownFamily, "up")} />
                 </div>
 
                 {/* ④ 明细小字行 */}
@@ -540,7 +574,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
                     <span>时延 {fmtMs(shownFamily.latencyMs)}</span>
                     <span>抖动 {fmtMs(shownFamily.jitterMs)}</span>
                   </div>
-                  {mode === "both" && (
+                  {resultMode === "both" && (
                     <div className="flex flex-wrap gap-x-3">
                       <span>单线程 ↓ {fmtSpeed(phaseMbpsOf(shownFamily, "down_single"))}</span>
                       <span>↑ {fmtSpeed(phaseMbpsOf(shownFamily, "up_single"))}</span>
@@ -562,9 +596,7 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
                     <div className="pt-2">
                       <SpeedChart samples={shownFamily.samples} height={200} colorByPhase />
                       <div className="mt-2 flex flex-wrap justify-center gap-4 text-xs">
-                        {PHASE_ORDER.filter((p) =>
-                          mode === "both" ? true : mode === "single" ? p.endsWith("single") : p.endsWith("multi"),
-                        ).map((p) => (
+                        {PHASE_ORDER.filter((p) => shownPhases.includes(p)).map((p) => (
                           <span key={p} className="flex items-center gap-1.5">
                             <span
                               className={cn(
@@ -610,4 +642,10 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
 /** 从 FamilyResult 里取某相位的 Mbps（缺失返回 -1） */
 function phaseMbpsOf(f: { phases: { phase: string; mbps: number }[] } | null | undefined, phase: string): number {
   return f?.phases.find((p) => p.phase === phase)?.mbps ?? -1
+}
+
+/** 主口径速率：优先多线程，缺失回退单线程（由结果数据自身决定，与设置解耦） */
+function mainMbpsOf(f: { phases: { phase: string; mbps: number }[] } | null | undefined, dir: "down" | "up"): number {
+  const multi = phaseMbpsOf(f, `${dir}_multi`)
+  return multi > 0 ? multi : phaseMbpsOf(f, `${dir}_single`)
 }
