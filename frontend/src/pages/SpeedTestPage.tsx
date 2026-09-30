@@ -406,18 +406,60 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
             }
           />
         </button>
-        {running ? (
+        {running && (
           <p className="text-muted-foreground/60 animate-in fade-in mt-2 text-xs duration-300">
             双击表盘停止测速
           </p>
-        ) : (
-          startDisabled && (
-            <p className="text-muted-foreground animate-in fade-in mt-2 text-xs duration-300">
-              {inWails() ? "设置加载中…" : "浏览器环境无法测速，开发预览请加 ?mock=1"}
-            </p>
-          )
         )}
       </div>
+
+      {/* 模式选择区（idle + 结果态）：占据表盘正下方原状态行的位置；
+          结果态选完参数点 GO 即按新设置重测；出口/节点簇仅 idle 展示避免与结果区重复 */}
+      <Collapse open={run === "idle" || dataOpen}>
+        <div className="space-y-4 pt-1">
+          <div className="flex items-stretch justify-center gap-2">
+            <RubberSegment
+              size="sm"
+              aria-label="线程模式"
+              items={MODE_ITEMS}
+              value={mode}
+              disabled={running}
+              onChange={(v) => onPatchSettings({ mode: v })}
+            />
+            <RubberSegment
+              size="sm"
+              aria-label="地址族"
+              items={FAMILY_ITEMS}
+              value={family}
+              disabled={running}
+              onChange={(v) => onPatchSettings({ family: v })}
+            />
+          </div>
+
+          {!running && startDisabled && (
+            <p className="text-muted-foreground text-center text-xs">
+              {inWails() ? "设置加载中…" : "浏览器环境无法测速，开发预览请加 ?mock=1"}
+            </p>
+          )}
+
+          {run === "idle" && (
+            <InfoCluster
+              client={location}
+              ipv6OK={ipv6OK}
+              node={pickedNode ?? autoNode}
+              nodeLoading={autoNodeLoading}
+              onSwitch={() => setPickerOpen(true)}
+              switchDisabled={running || !location}
+            />
+          )}
+
+          {(family === "v6" || family === "both") && ipv6OK === false && (
+            <p className="text-muted-foreground text-center text-xs">
+              {family === "v6" ? "未检测到 IPv6 出口，无法进行 IPv6 测速" : "未检测到 IPv6 出口，将仅测 IPv4"}
+            </p>
+          )}
+        </div>
+      </Collapse>
 
       {/* running 实时区：上下行瞬时速率卡片 + 实时绘制的曲线 */}
       {running && (
@@ -545,48 +587,6 @@ export function SpeedTestPage({ settings, onPatchSettings, onFinished }: SpeedTe
             )}
           </div>
         )}
-      </Collapse>
-
-      {/* 工作区（idle + 结果态）：分段控件随时可改，供下一次测速选择；
-          出口/节点信息只在 idle 展示（结果态数据区里已有本轮实际节点，避免重复） */}
-      <Collapse open={run === "idle" || dataOpen}>
-        <div className="space-y-4 pt-1">
-          <div className="flex items-stretch justify-center gap-2">
-            <RubberSegment
-              size="sm"
-              aria-label="线程模式"
-              items={MODE_ITEMS}
-              value={mode}
-              disabled={running}
-              onChange={(v) => onPatchSettings({ mode: v })}
-            />
-            <RubberSegment
-              size="sm"
-              aria-label="地址族"
-              items={FAMILY_ITEMS}
-              value={family}
-              disabled={running}
-              onChange={(v) => onPatchSettings({ family: v })}
-            />
-          </div>
-
-          {run === "idle" && (
-            <InfoCluster
-              client={location}
-              ipv6OK={ipv6OK}
-              node={pickedNode ?? autoNode}
-              nodeLoading={autoNodeLoading}
-              onSwitch={() => setPickerOpen(true)}
-              switchDisabled={running || !location}
-            />
-          )}
-
-          {(family === "v6" || family === "both") && ipv6OK === false && (
-            <p className="text-muted-foreground text-center text-xs">
-              {family === "v6" ? "未检测到 IPv6 出口，无法进行 IPv6 测速" : "未检测到 IPv6 出口，将仅测 IPv4"}
-            </p>
-          )}
-        </div>
       </Collapse>
 
       {location && (
