@@ -40,25 +40,25 @@ type Store struct {
 
 const schema = `
 CREATE TABLE IF NOT EXISTS history (
-	test_id      TEXT NOT NULL,
-	started_at   TEXT NOT NULL,
-	family       TEXT NOT NULL,
-	node_name    TEXT,
-	node_ip      TEXT,
-	province     TEXT,
-	city         TEXT,
-	oper         TEXT,
-	latency_ms   REAL,
-	jitter_ms    REAL,
-	single_down  REAL,
-	single_up    REAL,
-	multi_down   REAL,
-	multi_up     REAL,
-	duration_s   REAL,
-	samples_json TEXT,
+	test_id       TEXT NOT NULL,
+	started_at    TEXT NOT NULL,
+	started_epoch INTEGER,
+	family        TEXT NOT NULL,
+	node_name     TEXT,
+	node_ip       TEXT,
+	province      TEXT,
+	city          TEXT,
+	oper          TEXT,
+	latency_ms    REAL,
+	jitter_ms     REAL,
+	single_down   REAL,
+	single_up     REAL,
+	multi_down    REAL,
+	multi_up      REAL,
+	duration_s    REAL,
+	samples_json  TEXT,
 	PRIMARY KEY (test_id, family)
 );
-CREATE INDEX IF NOT EXISTS idx_history_started ON history(started_at DESC);
 `
 
 func dbPath() (string, error) {
@@ -92,7 +92,76 @@ func OpenAt(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// migrate 老库升级：补 started_epoch 列并回填。started_at 存的是带时区偏移的
+// RFC3339 文本，字典序在跨时区/夏令时场景下与时间序不一致，排序统一改用整数时间戳。
+func migrate(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(history)`)
+	if err != nil {
+		return err
+	}
+	hasEpoch := false
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "started_epoch" {
+			hasEpoch = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !hasEpoch {
+		if _, err := db.Exec(`ALTER TABLE history ADD COLUMN started_epoch INTEGER`); err != nil {
+			return err
+		}
+	}
+	// 回填老数据：解析失败置 0（排序沉底），不影响新写入
+	pend, err := db.Query(`SELECT rowid, started_at FROM history WHERE started_epoch IS NULL`)
+	if err != nil {
+		return err
+	}
+	type backfill struct {
+		rowid int64
+		at    string
+	}
+	var fills []backfill
+	for pend.Next() {
+		var f backfill
+		if err := pend.Scan(&f.rowid, &f.at); err != nil {
+			pend.Close()
+			return err
+		}
+		fills = append(fills, f)
+	}
+	pend.Close()
+	if err := pend.Err(); err != nil {
+		return err
+	}
+	for _, f := range fills {
+		var epoch int64
+		if t, e := time.Parse(time.RFC3339, f.at); e == nil {
+			epoch = t.UnixNano()
+		}
+		if _, err := db.Exec(`UPDATE history SET started_epoch = ? WHERE rowid = ?`, epoch, f.rowid); err != nil {
+			return err
+		}
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_history_epoch ON history(started_epoch DESC)`)
+	return err
 }
 
 // Close 关闭数据库。
@@ -100,13 +169,19 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// SaveTest 一次测速的每个地址族写一行。
+// SaveTest 一次测速的每个地址族写一行（单事务：要么整次完整落库，要么整次不落）。
 func (s *Store) SaveTest(r *engine.TestResult) error {
 	if s == nil {
 		return fmt.Errorf("store 未初始化")
 	}
 	testID := fmt.Sprintf("t%d", r.StartedAt.UnixNano())
 	started := r.StartedAt.Format(time.RFC3339)
+	epoch := r.StartedAt.UnixNano()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // Commit 成功后为 no-op
 	for _, f := range r.Families {
 		samplesJSON, err := json.Marshal(f.Samples)
 		if err != nil {
@@ -117,12 +192,12 @@ func (s *Store) SaveTest(r *engine.TestResult) error {
 			nodeName = f.Node.DisplayName()
 			nodeIP = f.Node.HostIP
 		}
-		_, err = s.db.Exec(
+		_, err = tx.Exec(
 			`INSERT OR REPLACE INTO history
-			 (test_id, started_at, family, node_name, node_ip, province, city, oper,
+			 (test_id, started_at, started_epoch, family, node_name, node_ip, province, city, oper,
 			  latency_ms, jitter_ms, single_down, single_up, multi_down, multi_up, duration_s, samples_json)
-			 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			testID, started, f.Family, nodeName, nodeIP, r.Client.Province, r.Client.City, r.Client.Oper,
+			 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			testID, started, epoch, f.Family, nodeName, nodeIP, r.Client.Province, r.Client.City, r.Client.Oper,
 			f.LatencyMS, f.JitterMS,
 			f.PhaseMbps(engine.PhaseDownSingle), f.PhaseMbps(engine.PhaseUpSingle),
 			f.PhaseMbps(engine.PhaseDownMulti), f.PhaseMbps(engine.PhaseUpMulti),
@@ -132,11 +207,15 @@ func (s *Store) SaveTest(r *engine.TestResult) error {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
-const rowCols = `test_id, started_at, family, node_name, node_ip, province, city, oper,
- latency_ms, jitter_ms, single_down, single_up, multi_down, multi_up, duration_s`
+// rowCols 可空列统一 COALESCE 兜底：个别行字段损坏（NULL）时不至于让整页列表扫描失败。
+const rowCols = `test_id, started_at, family,
+ COALESCE(node_name, ''), COALESCE(node_ip, ''), COALESCE(province, ''), COALESCE(city, ''), COALESCE(oper, ''),
+ COALESCE(latency_ms, -1), COALESCE(jitter_ms, 0),
+ COALESCE(single_down, -1), COALESCE(single_up, -1), COALESCE(multi_down, -1), COALESCE(multi_up, -1),
+ COALESCE(duration_s, 0)`
 
 func scanRow(sc interface{ Scan(...any) error }) (HistoryRow, error) {
 	var r HistoryRow
@@ -152,9 +231,9 @@ func scanRow(sc interface{ Scan(...any) error }) (HistoryRow, error) {
 	return r, nil
 }
 
-// ListTests 最近 limit 次测速，按时间倒序。
+// ListTests 最近 limit 次测速，按时间倒序（整数时间戳排序，跨时区可靠）。
 func (s *Store) ListTests(limit int) ([]HistoryRow, error) {
-	rows, err := s.db.Query(`SELECT `+rowCols+` FROM history ORDER BY started_at DESC LIMIT ?`, limit)
+	rows, err := s.db.Query(`SELECT `+rowCols+` FROM history ORDER BY started_epoch DESC, rowid DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +252,7 @@ func (s *Store) ListTests(limit int) ([]HistoryRow, error) {
 // GetTest 单次测速完整明细（含每族采样曲线），还原为 engine.TestResult。
 func (s *Store) GetTest(testID string) (*engine.TestResult, error) {
 	rows, err := s.db.Query(
-		`SELECT `+rowCols+`, samples_json FROM history WHERE test_id = ? ORDER BY family`, testID)
+		`SELECT `+rowCols+`, COALESCE(samples_json, '') FROM history WHERE test_id = ? ORDER BY family`, testID)
 	if err != nil {
 		return nil, err
 	}

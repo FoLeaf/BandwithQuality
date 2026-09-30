@@ -1,9 +1,12 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"bandwidthquality/internal/engine"
 )
@@ -105,6 +108,50 @@ func TestSaveListGetDelete(t *testing.T) {
 	rows, _ = s.ListTests(10)
 	if len(rows) != 0 {
 		t.Fatalf("清空后应 0 行，got %d", len(rows))
+	}
+}
+
+// TestMigrateEpochOrdering 老库（无 started_epoch 列）升级后按真实时间排序：
+// started_at 是带时区偏移的 RFC3339 文本，跨时区时字典序与时间序不一致
+// （"2026-01-01T00:00:00+08:00" 实际早于 "2025-12-31T23:00:00Z"，字典序却更大）。
+func TestMigrateEpochOrdering(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSchema := `CREATE TABLE history (
+	test_id TEXT NOT NULL, started_at TEXT NOT NULL, family TEXT NOT NULL,
+	node_name TEXT, node_ip TEXT, province TEXT, city TEXT, oper TEXT,
+	latency_ms REAL, jitter_ms REAL, single_down REAL, single_up REAL,
+	multi_down REAL, multi_up REAL, duration_s REAL, samples_json TEXT,
+	PRIMARY KEY (test_id, family))`
+	if _, err := db.Exec(oldSchema); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	for _, ins := range []struct{ id, at string }{
+		{"tA", "2026-01-01T00:00:00+08:00"}, // = 2025-12-31T16:00:00Z，时间更早
+		{"tB", "2025-12-31T23:00:00Z"},      // 时间更晚，但文本字典序更小
+	} {
+		if _, err := db.Exec(`INSERT INTO history (test_id, started_at, family) VALUES (?,?,?)`, ins.id, ins.at, "IPv4"); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+
+	s, err := OpenAt(path) // 打开即触发迁移
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rows, err := s.ListTests(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].TestID != "tB" || rows[1].TestID != "tA" {
+		t.Fatalf("应按真实时间倒序（tB, tA），got %+v", rows)
 	}
 }
 

@@ -36,6 +36,16 @@ func (a *App) startup(ctx context.Context) {
 	a.store = s
 }
 
+// shutdown 应用退出时释放资源（历史库落盘关闭）。
+func (a *App) shutdown(ctx context.Context) {
+	if a.store != nil {
+		if err := a.store.Close(); err != nil {
+			wailsruntime.LogWarningf(ctx, "历史库关闭失败: %v", err)
+		}
+		a.store = nil
+	}
+}
+
 // GetLocation 出口网络探测（IP/省/市/运营商）。
 func (a *App) GetLocation() (engine.ClientLocation, error) {
 	return engine.Probe(false)
