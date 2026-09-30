@@ -10,47 +10,76 @@ import (
 	"time"
 )
 
-// 控制面 base 与出口探测结果的进程级缓存（Wails 一次启动只探测一次）。
+// probeTTL 出口探测缓存有效期：会话内网络可能切换（Wi-Fi↔热点），
+// 永久缓存会让省市/运营商/选点一直按旧出口走；过期后下次使用时刷新。
+const probeTTL = 5 * time.Minute
+
+// 控制面 base 与出口探测结果的进程级缓存（带 TTL，见 probeTTL）。
 var (
 	probeMu   sync.Mutex
 	probeBase string
 	probeLoc  ClientLocation
+	probeAt   time.Time
 )
+
+// probeLocked 读取/刷新缓存（调用方需已持有 probeMu）。刷新失败时沿用旧值，
+// 推迟到下个 TTL 周期再试，避免测速因缓存过期而直接失败。
+func probeLocked(ctx context.Context) (string, ClientLocation, error) {
+	if probeBase != "" {
+		if time.Since(probeAt) < probeTTL {
+			return probeBase, probeLoc, nil
+		}
+		if ctx.Err() != nil {
+			return "", ClientLocation{}, ctx.Err()
+		}
+		base, info, err := fetchClient(ctx)
+		probeAt = time.Now()
+		if err != nil {
+			return probeBase, probeLoc, nil
+		}
+		probeBase, probeLoc = base, info.location()
+		return probeBase, probeLoc, nil
+	}
+	if ctx.Err() != nil {
+		return "", ClientLocation{}, ctx.Err()
+	}
+	base, info, err := fetchClient(ctx)
+	if err != nil {
+		return "", ClientLocation{}, err
+	}
+	probeBase, probeLoc, probeAt = base, info.location(), time.Now()
+	return probeBase, probeLoc, nil
+}
 
 // Probe 探测出口网络（复用缓存；force=true 时强制重新探测）。
 func Probe(force bool) (ClientLocation, error) {
 	probeMu.Lock()
 	defer probeMu.Unlock()
-	if !force && probeBase != "" {
+	ctx := context.Background()
+	if force {
+		base, info, err := fetchClient(ctx)
+		if err != nil {
+			return ClientLocation{}, err
+		}
+		probeBase, probeLoc, probeAt = base, info.location(), time.Now()
 		return probeLoc, nil
 	}
-	base, info, err := fetchClient()
-	if err != nil {
-		return ClientLocation{}, err
-	}
-	probeBase = base
-	probeLoc = info.location()
-	return probeLoc, nil
+	_, loc, err := probeLocked(ctx)
+	return loc, err
 }
 
-func controlBase() (string, ClientLocation, error) {
+// controlBase 取控制面 base 与出口位置（缓存 + TTL 刷新，ctx 取消立即返回）。
+func controlBase(ctx context.Context) (string, ClientLocation, error) {
 	probeMu.Lock()
 	defer probeMu.Unlock()
-	if probeBase == "" {
-		base, info, err := fetchClient()
-		if err != nil {
-			return "", ClientLocation{}, err
-		}
-		probeBase = base
-		probeLoc = info.location()
-	}
-	return probeBase, probeLoc, nil
+	return probeLocked(ctx)
 }
 
 // ListNodes 拉取候选节点列表（手动选点用）。
 // opt 为空的字段回退到探测到的出口位置；指定省份而未指定城市时用省会兜底。
 func ListNodes(opt ListOptions) ([]Node, error) {
-	_, loc, err := controlBase()
+	ctx := context.Background()
+	_, loc, err := controlBase(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +106,7 @@ func ListNodes(opt ListOptions) ([]Node, error) {
 	if opt.Oper != "" {
 		oper = opt.Oper
 	}
-	nodes, err := matchServersByLoc(prov, city, oper, opt.IPv6)
+	nodes, err := matchServersByLoc(ctx, prov, city, oper, opt.IPv6)
 	if err != nil {
 		return nil, err
 	}
@@ -96,12 +125,12 @@ type ListOptions struct {
 	NoPing   bool   `json:"noPing"` // 跳过列表快速 ping
 }
 
-func matchServersByLoc(prov, city, oper string, ipv6 bool) ([]Node, error) {
-	base, loc, err := controlBase()
+func matchServersByLoc(ctx context.Context, prov, city, oper string, ipv6 bool) ([]Node, error) {
+	base, loc, err := controlBase(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return matchServers(base, loc.IP, prov, city, oper, ipv6)
+	return matchServers(ctx, base, loc.IP, prov, city, oper, ipv6)
 }
 
 // AutoSelect 按上游三级回退自动选一个节点（不排队）。
@@ -113,7 +142,7 @@ func AutoSelect(opt ListOptions) (*Node, []Node, error) {
 	if len(nodes) == 0 {
 		return nil, nodes, fmt.Errorf("无可用节点")
 	}
-	_, loc, _ := controlBase()
+	_, loc, _ := controlBase(context.Background())
 	prov, city, oper := loc.Province, loc.City, loc.Oper
 	if opt.Province != "" {
 		prov = opt.Province
@@ -181,7 +210,7 @@ func enqueueWithFallback(ctx context.Context, nodes []Node, primary *Node, imei 
 			if n.HostIP == primary.HostIP && n.Port == primary.Port {
 				continue
 			}
-			if tcpOK(n.HostIP, n.Port) {
+			if tcpOKCtx(ctx, n.HostIP, n.Port) {
 				tried = append(tried, n)
 			}
 		}
@@ -194,7 +223,7 @@ func enqueueWithFallback(ctx context.Context, nodes []Node, primary *Node, imei 
 		if ctx.Err() != nil {
 			return "", nil, ctx.Err()
 		}
-		uuid, err := enqueue(*n, imei, 200)
+		uuid, err := enqueue(ctx, *n, imei, 200)
 		if err == nil {
 			return uuid, n, nil
 		}
@@ -234,7 +263,7 @@ func selectAndEnqueue(ctx context.Context, cb Callbacks, base string, loc Client
 		if oper != loc.Oper {
 			emit(cb, "nodes", fmt.Sprintf("%s节点不可用，尝试%s节点（跨运营商，速率可能偏低）…", loc.Oper, oper), pct)
 		}
-		nodes, err := matchServers(base, loc.IP, loc.Province, loc.City, oper, v6)
+		nodes, err := matchServers(ctx, base, loc.IP, loc.Province, loc.City, oper, v6)
 		if err != nil {
 			lastErr = err
 			continue
@@ -243,7 +272,9 @@ func selectAndEnqueue(ctx context.Context, cb Callbacks, base string, loc Client
 			lastErr = fmt.Errorf("%s 无可用节点", oper)
 			continue
 		}
-		cand := pickNode(nodes, loc.Province, loc.City, oper, tcpOK)
+		cand := pickNode(nodes, loc.Province, loc.City, oper, func(ip string, port int) bool {
+			return tcpOKCtx(ctx, ip, port)
+		})
 		if cand == nil {
 			lastErr = fmt.Errorf("%s 无可用节点", oper)
 			continue
@@ -273,7 +304,7 @@ func selectAndEnqueue(ctx context.Context, cb Callbacks, base string, loc Client
 // 通过 cb.OnProgress / cb.OnSample 实时推送进度与采样点。
 func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, error) {
 	opts.fill()
-	base, loc, err := controlBase()
+	base, loc, err := controlBase(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +379,7 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 			defer dequeue(*node, uuid)
 
 			emit(cb, "latency", "测量延迟…", phaseBase+span*0.3)
-			fr.LatencyMS, fr.JitterMS = MeasureLatency(node.HostIP, node.Port)
+			fr.LatencyMS, fr.JitterMS = measureLatencyCtx(ctx, node.HostIP, node.Port)
 			if cb.OnProgress != nil {
 				lat, jit := fr.LatencyMS, fr.JitterMS
 				cb.OnProgress(Progress{

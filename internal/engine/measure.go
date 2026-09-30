@@ -300,7 +300,7 @@ func sustainedMbps(speeds []float64) float64 {
 		return 0
 	}
 	cp := append([]float64(nil), speeds...)
-	// 插入排序：采样数很小（十几个），且避免引入 sort 的额外拷贝
+	// 选择排序（交换最小值）：采样数很小（十几个），省去引入 sort 包的开销
 	for i := 0; i < n; i++ {
 		for j := i + 1; j < n; j++ {
 			if cp[j] < cp[i] {

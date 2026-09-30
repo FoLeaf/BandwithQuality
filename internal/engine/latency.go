@@ -61,15 +61,16 @@ func parsePingOutput(out string) []float64 {
 }
 
 // pingSamples 发 count 个 ICMP 包返回逐包时延；进程有输出但退出码非 0（部分丢包）也照常解析。
-func pingSamples(ip string, count int) []float64 {
+// ctx 取消会立即杀掉 ping 进程（用户停止测速时时延阶段及时退出）。
+func pingSamples(ctx context.Context, ip string, count int) []float64 {
 	if count < 1 {
 		count = 4
 	}
 	args := pingArgs(count, strings.Contains(ip, ":"))
 	args = append(args, ip)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(count+2)*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, time.Duration(count+2)*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ping", args...)
+	cmd := exec.CommandContext(cctx, "ping", args...)
 	cmd.SysProcAttr = sysProcAttrNoWindow()
 	out, err := cmd.Output()
 	if len(out) > 0 {
@@ -84,14 +85,20 @@ func pingSamples(ip string, count int) []float64 {
 }
 
 // tcpingSamples ICMP 不可用时的回退：向节点端口发 HTTP 请求测往返时延。
-func tcpingSamples(ip string, port, count int) []float64 {
+func tcpingSamples(ctx context.Context, ip string, port, count int) []float64 {
 	req := []byte("GET / HTTP/1.1\r\nHost: " + hostPort(ip, port) + "\r\nConnection: close\r\n\r\n")
+	d := net.Dialer{Timeout: 2 * time.Second}
 	var samples []float64
 	for i := 0; i < count+1; i++ {
+		if ctx.Err() != nil {
+			return samples
+		}
 		t0 := time.Now()
-		c, err := net.DialTimeout("tcp", hostPort(ip, port), 2*time.Second)
+		c, err := d.DialContext(ctx, "tcp", hostPort(ip, port))
 		if err != nil {
-			time.Sleep(50 * time.Millisecond)
+			if !sleepCtx(ctx, 50*time.Millisecond) {
+				return samples
+			}
 			continue
 		}
 		_ = c.SetDeadline(time.Now().Add(2 * time.Second))
@@ -105,9 +112,23 @@ func tcpingSamples(ip string, port, count int) []float64 {
 		if err == nil && n > 0 {
 			samples = append(samples, float64(time.Since(t0).Microseconds())/1000.0)
 		}
-		time.Sleep(50 * time.Millisecond)
+		if !sleepCtx(ctx, 50*time.Millisecond) {
+			return samples
+		}
 	}
 	return samples
+}
+
+// sleepCtx 可中断的固定等待；ctx 取消返回 false。
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
 }
 
 func avgMS(samples []float64) float64 {
@@ -138,11 +159,16 @@ func jitterMS(samples []float64) float64 {
 }
 
 // MeasureLatency 测节点时延与抖动：ICMP 4 包优先，失败回退 TCP tcping。
-// 失败返回 -1。
+// 失败返回 -1。供手动单点测量等无取消场景使用。
 func MeasureLatency(ip string, port int) (avgMs, jitterMs float64) {
-	samples := pingSamples(ip, 4)
+	return measureLatencyCtx(context.Background(), ip, port)
+}
+
+// measureLatencyCtx 同 MeasureLatency，但随 ctx 取消及时退出（测速引擎用）。
+func measureLatencyCtx(ctx context.Context, ip string, port int) (avgMs, jitterMs float64) {
+	samples := pingSamples(ctx, ip, 4)
 	if len(samples) == 0 {
-		samples = tcpingSamples(ip, port, 4)
+		samples = tcpingSamples(ctx, ip, port, 4)
 	}
 	if len(samples) == 0 {
 		return -1, 0
@@ -152,7 +178,7 @@ func MeasureLatency(ip string, port int) (avgMs, jitterMs float64) {
 
 // QuickPing 列表快速探测：1 个 ICMP 包，不通返回 -1。
 func QuickPing(ip string) float64 {
-	ts := pingSamples(ip, 1)
+	ts := pingSamples(context.Background(), ip, 1)
 	if len(ts) == 0 {
 		return -1
 	}

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -65,9 +66,10 @@ func safeStr(v any) string {
 // 共享 Transport 以复用连接池。
 var noProxyTransport = &http.Transport{Proxy: nil}
 
-func httpGet(raw string, timeout time.Duration) (string, error) {
+// httpGet 携带调用方 ctx：用户停止测速时控制面请求（探测/列表/排队）立即中断。
+func httpGet(ctx context.Context, raw string, timeout time.Duration) (string, error) {
 	client := &http.Client{Timeout: timeout, Transport: noProxyTransport}
-	req, err := http.NewRequest(http.MethodGet, raw, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
 		return "", err
 	}
@@ -84,9 +86,9 @@ func httpGet(raw string, timeout time.Duration) (string, error) {
 	return string(b), nil
 }
 
-func httpPost(raw string, timeout time.Duration) (string, error) {
+func httpPost(ctx context.Context, raw string, timeout time.Duration) (string, error) {
 	client := &http.Client{Timeout: timeout, Transport: noProxyTransport}
-	req, err := http.NewRequest(http.MethodPost, raw, strings.NewReader(""))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, raw, strings.NewReader(""))
 	if err != nil {
 		return "", err
 	}
@@ -106,10 +108,13 @@ func httpPost(raw string, timeout time.Duration) (string, error) {
 }
 
 // fetchClient 依次尝试控制面服务器，探测出口 IP 与省市/运营商。
-func fetchClient() (base string, info ClientInfo, err error) {
+func fetchClient(ctx context.Context) (base string, info ClientInfo, err error) {
 	var last error
 	for _, b := range ctrlServers {
-		body, e := httpGet(b+"/dataServer/getIpLocSP.php", 6*time.Second)
+		if ctx.Err() != nil {
+			return "", ClientInfo{}, ctx.Err()
+		}
+		body, e := httpGet(ctx, b+"/dataServer/getIpLocSP.php", 6*time.Second)
 		if e != nil {
 			last = e
 			continue
@@ -157,7 +162,7 @@ func (c ClientInfo) location() ClientLocation {
 }
 
 // matchServers 按位置向控制面拉取候选节点列表。
-func matchServers(base, ip, province, city, oper string, ipv6 bool) ([]Node, error) {
+func matchServers(ctx context.Context, base, ip, province, city, oper string, ipv6 bool) ([]Node, error) {
 	v := url.Values{}
 	v.Set("ip", ip)
 	v.Set("network", "4")
@@ -172,7 +177,7 @@ func matchServers(base, ip, province, city, oper string, ipv6 bool) ([]Node, err
 	}
 	v.Set("model", "Android")
 	v.Set("pkg", pkgName)
-	body, err := httpGet(base+"/dataServer/mobilematch_many.php?"+v.Encode(), 10*time.Second)
+	body, err := httpGet(ctx, base+"/dataServer/mobilematch_many.php?"+v.Encode(), 10*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -207,9 +212,15 @@ func matchServers(base, ip, province, city, oper string, ipv6 bool) ([]Node, err
 	return out, nil
 }
 
-// tcpOK TCP 可达性探测。
+// tcpOK TCP 可达性探测（不可取消场景的便捷入口）。
 func tcpOK(ip string, port int) bool {
-	c, err := net.DialTimeout("tcp", hostPort(ip, port), 2*time.Second)
+	return tcpOKCtx(context.Background(), ip, port)
+}
+
+// tcpOKCtx TCP 可达性探测；ctx 取消时立即返回 false。
+func tcpOKCtx(ctx context.Context, ip string, port int) bool {
+	d := net.Dialer{Timeout: 2 * time.Second}
+	c, err := d.DialContext(ctx, "tcp", hostPort(ip, port))
 	if err != nil {
 		return false
 	}
@@ -241,7 +252,7 @@ func pickNode(servers []Node, province, city, oper string, prober func(ip string
 }
 
 // enqueue dovalid 排队：0=忙 2=排队中重试 -1=参数错误，成功返回 uuid（取 body[2:]）。
-func enqueue(s Node, imei string, bandwidth int) (string, error) {
+func enqueue(ctx context.Context, s Node, imei string, bandwidth int) (string, error) {
 	ts := fmt.Sprintf("%d", time.Now().Unix())
 	token := enqueueToken(imei, ts, bandwidth)
 	raw := fmt.Sprintf(
@@ -250,7 +261,7 @@ func enqueue(s Node, imei string, bandwidth int) (string, error) {
 	)
 	var last string
 	for i := 0; i < 3; i++ {
-		body, err := httpGet(raw, 5*time.Second)
+		body, err := httpGet(ctx, raw, 5*time.Second)
 		if err != nil {
 			// 网络层失败（超时/EOF/拒连）说明节点服务异常：
 			// 立即返回由上层换下一个节点，而不是原地重试浪费时间
@@ -262,7 +273,11 @@ func enqueue(s Node, imei string, bandwidth int) (string, error) {
 			return "", fmt.Errorf("服务器忙")
 		}
 		if strings.HasPrefix(body, "2") {
-			time.Sleep(400 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(400 * time.Millisecond):
+			}
 			continue
 		}
 		if strings.HasPrefix(body, "-1") {
@@ -275,7 +290,10 @@ func enqueue(s Node, imei string, bandwidth int) (string, error) {
 	return "", fmt.Errorf("enqueue 失败: %s", last)
 }
 
-// dequeue 退队。
+// dequeue 退队。刻意不接用户 ctx：测速取消后仍要把节点队列还回去，
+// 用独立超时避免被已取消的 context 立即掐断。
 func dequeue(s Node, uuid string) {
-	_, _ = httpPost("http://"+hostPort(s.HostIP, s.Port)+"/speed/dovalid?key="+uuid, 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = httpPost(ctx, "http://"+hostPort(s.HostIP, s.Port)+"/speed/dovalid?key="+uuid, 5*time.Second)
 }
