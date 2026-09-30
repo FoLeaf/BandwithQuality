@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Minus, Square, X, Copy } from "lucide-react"
 import { inWails, quitApp, windowIsMaximised, windowMinimise, windowToggleMaximise } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -11,11 +11,14 @@ function WindowButton({
   label,
   children,
   danger,
+  armed,
 }: {
   onClick: () => void
   label: string
   children: React.ReactNode
   danger?: boolean
+  /** 待确认态（如测速进行中点关闭需二次点击）：琥珀色提示 */
+  armed?: boolean
 }) {
   return (
     <button
@@ -25,6 +28,7 @@ function WindowButton({
       className={cn(
         "hover:bg-muted flex h-10 w-10 items-center justify-center text-[var(--muted-foreground)] transition-colors outline-none",
         danger && "hover:bg-destructive hover:text-white",
+        armed && "bg-amber-500/15 text-amber-600",
       )}
     >
       {children}
@@ -33,8 +37,15 @@ function WindowButton({
 }
 
 /** 无边框窗口的自绘标题栏：拖拽区 + 最小化/最大化/关闭 */
-export function TitleBar() {
+export function TitleBar({ running = false }: { running?: boolean }) {
   const [maximised, setMaximised] = useState(false)
+  // 测速进行中点关闭：先进入待确认态（3 秒内再点才退出），避免误关中断测速
+  const [armClose, setArmClose] = useState(false)
+  const closeTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    if (!running) setArmClose(false)
+  }, [running])
 
   const syncMaximised = useCallback(() => {
     if (!inWails()) return
@@ -61,6 +72,22 @@ export function TitleBar() {
     }
   }, [])
 
+  const close = useCallback(() => {
+    if (running && !armClose) {
+      setArmClose(true)
+      window.clearTimeout(closeTimer.current)
+      closeTimer.current = window.setTimeout(() => setArmClose(false), 3000)
+      return
+    }
+    window.clearTimeout(closeTimer.current)
+    setArmClose(false)
+    try {
+      quitApp()
+    } catch {
+      // 忽略
+    }
+  }, [running, armClose])
+
   return (
     <div
       style={dragStyle}
@@ -83,7 +110,12 @@ export function TitleBar() {
         <WindowButton label={maximised ? "还原" : "最大化"} onClick={toggleMax}>
           {maximised ? <Copy className="size-3.5 -scale-x-100" /> : <Square className="size-3.5" />}
         </WindowButton>
-        <WindowButton label="关闭" danger onClick={() => { try { quitApp() } catch { /* 忽略 */ } }}>
+        <WindowButton
+          label={armClose ? "测速进行中，再点一次确认退出" : "关闭"}
+          danger
+          armed={armClose}
+          onClick={close}
+        >
           <X className="size-4" />
         </WindowButton>
       </div>

@@ -23,7 +23,6 @@ import {
   mockListHistory,
   mockListNodes,
   mockNoop,
-  mockOffEvents,
   mockOnError,
   mockOnFinish,
   mockOnProgress,
@@ -97,8 +96,14 @@ export const deleteHistory = (id: string): Promise<void> => (MOCK ? mockNoop() :
 export const clearHistory = (): Promise<void> => (MOCK ? mockNoop() : go().ClearHistory())
 export const getSettings = async (): Promise<Settings> => {
   if (MOCK) return mockGetSettings()
-  const s = await go().GetSettings()
-  return s ?? { ...DEFAULT_SETTINGS }
+  try {
+    const s = await go().GetSettings()
+    return s ?? { ...DEFAULT_SETTINGS }
+  } catch {
+    // 设置文件损坏/读取失败：回退默认值（下次保存时自动修复），
+    // 不能让应用一直停在「设置加载中」而无法测速
+    return { ...DEFAULT_SETTINGS }
+  }
 }
 export const saveSettings = (s: Settings): Promise<void> => (MOCK ? mockSaveSettings(s) : go().SaveSettings(s))
 
@@ -109,30 +114,20 @@ export const EV_SAMPLE = "bq:sample"
 export const EV_FINISHED = "bq:finished"
 export const EV_ERROR = "bq:error"
 
-export function onProgress(cb: (p: Progress) => void) {
+/** 订阅事件，返回取消订阅函数：组件卸载时各自清理，不牵连其他订阅方 */
+export function onProgress(cb: (p: Progress) => void): () => void {
   if (MOCK) return mockOnProgress(cb)
-  rt().EventsOn(EV_PROGRESS, cb)
+  return rt().EventsOn(EV_PROGRESS, cb)
 }
-export function onSample(cb: (s: Sample) => void) {
+export function onSample(cb: (s: Sample) => void): () => void {
   if (MOCK) return mockOnSample(cb)
-  rt().EventsOn(EV_SAMPLE, cb)
+  return rt().EventsOn(EV_SAMPLE, cb)
 }
-export function onFinish(cb: (r: TestResult) => void) {
+export function onFinish(cb: (r: TestResult) => void): () => void {
   if (MOCK) return mockOnFinish(cb)
-  rt().EventsOn(EV_FINISHED, cb)
+  return rt().EventsOn(EV_FINISHED, cb)
 }
-export function onError(cb: (msg: string) => void) {
+export function onError(cb: (msg: string) => void): () => void {
   if (MOCK) return mockOnError(cb)
-  rt().EventsOn(EV_ERROR, cb)
-}
-export function offEvents() {
-  if (MOCK) {
-    mockOffEvents()
-    return
-  }
-  try {
-    rt().EventsOff(EV_PROGRESS, EV_SAMPLE, EV_FINISHED, EV_ERROR)
-  } catch {
-    // 忽略
-  }
+  return rt().EventsOn(EV_ERROR, cb)
 }

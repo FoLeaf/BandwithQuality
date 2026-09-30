@@ -22,6 +22,7 @@ export default function App() {
   const [tab, setTab] = useState("speed")
   const [settings, setSettings] = useState<Settings | null>(null)
   const [historyBadge, setHistoryBadge] = useState(false)
+  const [testRunning, setTestRunning] = useState(false)
   // settings 的镜像 ref：patch 时直接读最新值，避免 setState 回调里做副作用
   const settingsRef = useRef<Settings | null>(null)
   const saveTimer = useRef<number | undefined>(undefined)
@@ -56,7 +57,7 @@ export default function App() {
 
   return (
     <div className="bg-background flex h-screen flex-col overflow-hidden">
-      <TitleBar />
+      <TitleBar running={testRunning} />
       <main className="min-h-0 w-full flex-1 overflow-y-auto">
         {/* min-h-full + flex：让页面内容纵向铺满，测速页可把表盘在剩余空间里居中 */}
         <div className="mx-auto flex min-h-full w-full max-w-xl flex-col px-3 pt-2 pb-4">
@@ -68,6 +69,7 @@ export default function App() {
               onFinished={() => {
                 if (tab !== "history") setHistoryBadge(true)
               }}
+              onRunningChange={setTestRunning}
             />
           </div>
           <div className={cn("min-h-0 flex-1 flex-col", tab === "history" ? "flex" : "hidden")}>

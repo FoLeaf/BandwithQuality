@@ -61,15 +61,22 @@ const subs = {
   error: new Set<Handler<string>>(),
 }
 
-export const mockOnProgress = (cb: Handler<Progress>) => subs.progress.add(cb)
-export const mockOnSample = (cb: Handler<Sample>) => subs.sample.add(cb)
-export const mockOnFinish = (cb: Handler<TestResult>) => subs.finished.add(cb)
-export const mockOnError = (cb: Handler<string>) => subs.error.add(cb)
-export function mockOffEvents() {
-  subs.progress.clear()
-  subs.sample.clear()
-  subs.finished.clear()
-  subs.error.clear()
+/** 订阅并返回取消函数（与 Wails EventsOn 的返回形态一致） */
+export const mockOnProgress = (cb: Handler<Progress>) => {
+  subs.progress.add(cb)
+  return () => subs.progress.delete(cb)
+}
+export const mockOnSample = (cb: Handler<Sample>) => {
+  subs.sample.add(cb)
+  return () => subs.sample.delete(cb)
+}
+export const mockOnFinish = (cb: Handler<TestResult>) => {
+  subs.finished.add(cb)
+  return () => subs.finished.delete(cb)
+}
+export const mockOnError = (cb: Handler<string>) => {
+  subs.error.add(cb)
+  return () => subs.error.delete(cb)
 }
 
 function fire<T>(set: Set<Handler<T>>, v: T) {

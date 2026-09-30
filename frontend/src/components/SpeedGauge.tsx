@@ -3,8 +3,8 @@ import { ArrowDown, ArrowUp } from "lucide-react"
 import { useSmoothedValue } from "@/lib/useSmoothed"
 import { cn } from "@/lib/utils"
 
-/** speedtest.net 式非线性刻度：各档位在弧上均匀分布 */
-const STOPS = [0, 5, 10, 50, 100, 250, 500, 750, 1000, 1500]
+/** speedtest.net 式非线性刻度：各档位在弧上均匀分布（上限 2500 覆盖 2.5G 宽带） */
+const STOPS = [0, 5, 10, 50, 100, 250, 500, 750, 1000, 1500, 2500]
 const START_ANGLE = 135 // 底部左侧
 const SWEEP = 270 // 顺时针扫过角度
 
@@ -18,7 +18,7 @@ const R_TICK_MAJOR_OUT = 105
 const R_TICK_MINOR_OUT = 99
 const R_NEEDLE_OUT = 112 // 当前速度处的高亮针，比刻度更长
 const R_LABEL = 115.5
-const ZONE_RED = 1100
+const ZONE_RED = 2000
 const COLOR_RED = "#ef4444"
 
 interface SpeedGaugeProps {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BarChart3, GitCompare, History as HistoryIcon, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -81,12 +81,18 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
   const [compare, setCompare] = useState<string[]>([])
   const [compareResults, setCompareResults] = useState<TestResult[]>([])
   const [compareOpen, setCompareOpen] = useState(false)
+  const [unavailable, setUnavailable] = useState(false)
+  // 两步确认：删除/清空先进入待确认态，3 秒内再点一次才执行（超时自动取消）
+  const [armDel, setArmDel] = useState<string | null>(null)
+  const [armClear, setArmClear] = useState(false)
+  const armTimer = useRef<number | undefined>(undefined)
 
   const reload = useCallback(async () => {
     try {
       setRows(await listHistory(200))
+      setUnavailable(false)
     } catch {
-      // 桌面外运行
+      setUnavailable(true)
     }
   }, [])
 
@@ -130,16 +136,52 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
   }
 
   const del = async (id: string) => {
-    await deleteHistory(id)
+    try {
+      await deleteHistory(id)
+    } catch (e: any) {
+      toast.error("删除失败", { description: String(e?.message ?? e) })
+      return
+    }
     setCompare((prev) => prev.filter((x) => x !== id))
     await reload()
   }
 
   const clearAll = async () => {
-    await clearHistory()
+    try {
+      await clearHistory()
+    } catch (e: any) {
+      toast.error("清空失败", { description: String(e?.message ?? e) })
+      return
+    }
     setCompare([])
     await reload()
     toast.success("历史已清空")
+  }
+
+  const confirmDel = (id: string) => {
+    if (armDel !== id) {
+      setArmDel(id)
+      setArmClear(false)
+      window.clearTimeout(armTimer.current)
+      armTimer.current = window.setTimeout(() => setArmDel(null), 3000)
+      return
+    }
+    window.clearTimeout(armTimer.current)
+    setArmDel(null)
+    void del(id)
+  }
+
+  const confirmClear = () => {
+    if (!armClear) {
+      setArmClear(true)
+      setArmDel(null)
+      window.clearTimeout(armTimer.current)
+      armTimer.current = window.setTimeout(() => setArmClear(false), 3000)
+      return
+    }
+    window.clearTimeout(armTimer.current)
+    setArmClear(false)
+    void clearAll()
   }
 
   const famRows = (r: TestResult | undefined, family: string) => r?.families.find((f) => f.family === family)
@@ -155,8 +197,13 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
           <Button variant="outline" size="sm" disabled={compare.length !== 2} onClick={() => void openCompare()}>
             <GitCompare /> 对比所选{compare.length > 0 && `（${compare.length}/2）`}
           </Button>
-          <Button variant="outline" size="sm" disabled={rows.length === 0} onClick={() => void clearAll()}>
-            <Trash2 /> 清空
+          <Button
+            variant={armClear ? "destructive" : "outline"}
+            size="sm"
+            disabled={rows.length === 0}
+            onClick={confirmClear}
+          >
+            <Trash2 /> {armClear ? "确认清空" : "清空"}
           </Button>
         </div>
       </div>
@@ -165,7 +212,9 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
       <ScrollArea className="min-h-0 flex-1">
         <div className="divide-y pt-1">
           {groups.length === 0 && (
-            <div className="text-muted-foreground py-16 text-center text-sm">暂无历史记录，去测一次吧</div>
+            <div className="text-muted-foreground py-16 text-center text-sm">
+              {unavailable ? "历史记录不可用（本地存储打开失败）" : "暂无历史记录，去测一次吧"}
+            </div>
           )}
           {groups.map((g) => {
             const v4 = rowOf(g, "IPv4")
@@ -187,8 +236,13 @@ export function HistoryPage({ visible }: { visible?: boolean }) {
                   <button className="min-w-0 flex-1 text-left" onClick={() => void openDetail(g.testId)}>
                     <span className="font-medium">{t.toLocaleString("zh-CN", { hour12: false })}</span>
                   </button>
-                  <Button variant="ghost" size="iconSm" onClick={() => void del(g.testId)} title="删除">
-                    <Trash2 className="text-muted-foreground" />
+                  <Button
+                    variant="ghost"
+                    size="iconSm"
+                    onClick={() => confirmDel(g.testId)}
+                    title={armDel === g.testId ? "再点一次确认删除" : "删除"}
+                  >
+                    <Trash2 className={armDel === g.testId ? "text-destructive" : "text-muted-foreground"} />
                   </Button>
                 </div>
                 {v4 && <FamilyBlock row={v4} />}

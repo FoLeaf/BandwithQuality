@@ -36,6 +36,8 @@ export function NodePickerDialog({ open, onOpenChange, location, ipv6, current, 
   const [nodes, setNodes] = useState<Node[]>([])
   const [loading, setLoading] = useState(false)
   const [pinging, setPinging] = useState(false)
+  // 列表是否已补过延迟：pingMs=-1 在补测前显示「…」，补测后仍 -1 才是「不可达」
+  const [pinged, setPinged] = useState(false)
 
   useEffect(() => {
     if (open && location) {
@@ -57,6 +59,7 @@ export function NodePickerDialog({ open, onOpenChange, location, ipv6, current, 
           noPing: !withPing,
         })
         setNodes(list)
+        if (!withPing) setPinged(false)
       } catch (e: any) {
         toast.error("获取节点列表失败", { description: String(e?.message ?? e) })
       } finally {
@@ -72,12 +75,16 @@ export function NodePickerDialog({ open, onOpenChange, location, ipv6, current, 
     load(false)
   }, [open, load])
 
-  const needPing = useMemo(() => nodes.some((n) => n.pingMs === 0), [nodes])
+  // 后端未 ping 的节点 pingMs 为 -1（不是 0）：列表加载后自动补一轮延迟
+  const needPing = useMemo(() => nodes.some((n) => n.pingMs < 0), [nodes])
   useEffect(() => {
     if (!open || !needPing || loading || pinging) return
     setPinging(true)
     listNodes({ province, city: "", oper, ipv6, noPing: false })
-      .then(setNodes)
+      .then((list) => {
+        setNodes(list)
+        setPinged(true)
+      })
       .catch(() => undefined)
       .finally(() => setPinging(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,6 +95,7 @@ export function NodePickerDialog({ open, onOpenChange, location, ipv6, current, 
     try {
       const list = await listNodes({ province, city: "", oper, ipv6, noPing: false })
       setNodes(list)
+      setPinged(true)
     } finally {
       setPinging(false)
     }
@@ -199,10 +207,10 @@ export function NodePickerDialog({ open, onOpenChange, location, ipv6, current, 
                       <span
                         className={cn(
                           "tabular w-16 text-right text-xs",
-                          n.pingMs > 0 ? "text-muted-foreground" : "text-destructive",
+                          pinged && n.pingMs < 0 ? "text-destructive" : "text-muted-foreground",
                         )}
                       >
-                        {pinging && n.pingMs === 0 ? "…" : n.pingMs > 0 ? fmtMs(n.pingMs) : "不可达"}
+                        {n.pingMs > 0 ? fmtMs(n.pingMs) : pinged ? "不可达" : "…"}
                       </span>
                     </span>
                   </button>
