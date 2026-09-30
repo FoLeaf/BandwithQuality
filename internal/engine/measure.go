@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -43,9 +46,34 @@ var uploadPayload = sync.OnceValue(func() []byte {
 	return payload
 })
 
+// lane 自愈参数：上游节点间歇性 RST/超时常见，单次失败就永久损失一条并行
+// 连接会让相位后半程吞吐塌陷；按指数退避重试，连续失败才退役。
+const (
+	laneRetryBackoff = 250 * time.Millisecond
+	laneMaxBackoff   = 2 * time.Second
+	laneMaxFailures  = 3
+)
+
+// statusError 上游明确拒绝（非 2xx / 压缩编码）：相位内重试不会自愈。
+type statusError struct{ msg string }
+
+func (e *statusError) Error() string { return e.msg }
+
+func isStatusError(err error) bool {
+	var se *statusError
+	return errors.As(err, &se)
+}
+
 // Cancellation closes blocked reads/writes immediately; the phase waits for all workers.
-func dialTransfer(ctx context.Context, s Node) (net.Conn, func(), error) {
-	d := net.Dialer{Timeout: 8 * time.Second}
+// down 决定放大哪个方向的 socket 缓冲（下行收、上行发），见 setSocketBuffer。
+func dialTransfer(ctx context.Context, s Node, down bool) (net.Conn, func(), error) {
+	d := net.Dialer{
+		Timeout: 8 * time.Second,
+		Control: func(_, _ string, raw syscall.RawConn) error {
+			setSocketBuffer(raw, down)
+			return nil
+		},
+	}
 	c, err := d.DialContext(ctx, "tcp", hostPort(s.HostIP, s.Port))
 	if err != nil {
 		return nil, nil, err
@@ -85,19 +113,40 @@ func readTransferResponse(c net.Conn) (*http.Response, error) {
 	return resp, err
 }
 
-// Reopen a completed finite file for the remaining phase rather than losing a lane.
+// downloadWorker 一条下载 lane：完整文件读完立即续开请求占满相位；
+// 传输错误按指数退避重试（上游间歇性 RST/超时不永久损失并行度），
+// 上游明确拒绝或连续失败达上限后退役。
 func downloadWorker(ctx context.Context, s Node, uuid string, counter *byteCounter) {
 	buf := make([]byte, transferBufferSize)
+	failures := 0
+	backoff := laneRetryBackoff
 	for ctx.Err() == nil {
 		n, err := downloadTransfer(ctx, s, uuid, counter, buf)
-		if err != nil || n == 0 {
+		if ctx.Err() != nil {
 			return
 		}
+		if err == nil && n > 0 {
+			failures, backoff = 0, laneRetryBackoff
+			continue
+		}
+		if isStatusError(err) {
+			return
+		}
+		failures++
+		if failures >= laneMaxFailures {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, laneMaxBackoff)
 	}
 }
 
 func downloadTransfer(ctx context.Context, s Node, uuid string, counter *byteCounter, buf []byte) (int64, error) {
-	c, closeConn, err := dialTransfer(ctx, s)
+	c, closeConn, err := dialTransfer(ctx, s, true)
 	if err != nil {
 		return 0, err
 	}
@@ -120,7 +169,7 @@ func downloadTransfer(ctx context.Context, s Node, uuid string, counter *byteCou
 	// Close the connection before Body.Close on error; never drain an untrusted body.
 	defer func() { _ = c.Close(); _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || (resp.Header.Get("Content-Encoding") != "" && resp.Header.Get("Content-Encoding") != "identity") {
-		return 0, fmt.Errorf("invalid download response: %s", resp.Status)
+		return 0, &statusError{fmt.Sprintf("invalid download response: %s", resp.Status)}
 	}
 	var total int64
 	for ctx.Err() == nil {
@@ -138,12 +187,34 @@ func downloadTransfer(ctx context.Context, s Node, uuid string, counter *byteCou
 	return total, ctx.Err()
 }
 
+// uploadWorker 一条上传 lane：请求完成续开；传输错误退避重试，
+// 上游拒绝或连续失败达上限后退役（与 downloadWorker 同一套自愈策略）。
 func uploadWorker(ctx context.Context, s Node, uuid string, counter *byteCounter) {
 	payload := uploadPayload()
+	failures := 0
+	backoff := laneRetryBackoff
 	for ctx.Err() == nil {
-		if err := uploadTransfer(ctx, s, uuid, counter, payload, uploadContentLength); err != nil {
+		err := uploadTransfer(ctx, s, uuid, counter, payload, uploadContentLength)
+		if ctx.Err() != nil {
 			return
 		}
+		if err == nil {
+			failures, backoff = 0, laneRetryBackoff
+			continue
+		}
+		if isStatusError(err) {
+			return
+		}
+		failures++
+		if failures >= laneMaxFailures {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, laneMaxBackoff)
 	}
 }
 
@@ -156,7 +227,7 @@ func uploadTransfer(ctx context.Context, s Node, uuid string, counter *byteCount
 	if remaining <= 0 || len(payload) == 0 {
 		return fmt.Errorf("invalid upload body size")
 	}
-	c, closeConn, err := dialTransfer(ctx, s)
+	c, closeConn, err := dialTransfer(ctx, s, false)
 	if err != nil {
 		return err
 	}
@@ -168,7 +239,7 @@ func uploadTransfer(ctx context.Context, s Node, uuid string, counter *byteCount
 	go func() {
 		resp, err := readTransferResponse(c)
 		if err == nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
-			err = fmt.Errorf("upload rejected: %s", resp.Status)
+			err = &statusError{"upload rejected: " + resp.Status}
 		}
 		_ = c.Close()
 		if resp != nil {
@@ -191,6 +262,16 @@ func uploadTransfer(ctx context.Context, s Node, uuid string, counter *byteCount
 		counter.add(n) // Payload only; no HTTP or multipart framing.
 		remaining -= int64(n)
 		if err != nil {
+			if ctx.Err() != nil {
+				return err
+			}
+			// 服务端拒绝并关闭时，写失败只是表象：先关连接解除阻塞的响应
+			// 读取，再取真实原因，让 lane 立即退役而不是按瞬时错误退避重试。
+			_ = c.Close()
+			<-response
+			if isStatusError(responseErr) {
+				return responseErr
+			}
 			return err
 		}
 	}
@@ -201,8 +282,12 @@ func uploadTransfer(ctx context.Context, s Node, uuid string, counter *byteCount
 		return err
 	}
 	// A completed body needs an acknowledgement before another request is started.
+	// 主体完整送达后确认超时视为成功：字节已被对端接收，慢确认不应拖死健康 lane。
 	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
 	<-response
+	if os.IsTimeout(responseErr) {
+		return nil
+	}
 	return responseErr
 }
 
