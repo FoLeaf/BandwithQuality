@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="100%" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
-  <title>BandwithQuality 架构：React 前端 ←Wails 事件桥→ Go 引擎 → 测速节点，SQLite 本地存储</title>
-  <desc>一次测速的数据流：前端发起，Go 引擎完成选点与上下行吞吐测量，500ms 采样经事件桥实时推送回前端绘制曲线，结果写入 SQLite。</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="100%" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <title>BandwithQuality 架构：React 前端 ⇄ Wails 事件桥 ⇄ Go 测速引擎 → 测速节点；结果写入 SQLite</title>
+  <desc>一次测速的数据流：前端发起，Go 引擎完成选点与上下行吞吐测量，500ms 采样经事件桥实时推送回前端绘制曲线，结果写入 SQLite 本地存储。</desc>
   <defs>
     <linearGradient id="wbg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#181B22"/>
@@ -10,58 +10,56 @@
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#5A6473"/>
     </marker>
   </defs>
-  <rect width="1200" height="330" rx="16" fill="url(#wbg)"/>
-
-  <g font-size="20" font-weight="600" fill="#F5F7FA" text-anchor="middle">
-    <!-- 前端 -->
-    <rect x="60" y="80" width="270" height="120" rx="14" fill="#1C2029" stroke="#2E3542"/>
-    <text x="195" y="122">React 前端</text>
-    <g font-size="13.5" font-weight="400" fill="#96A0B0">
-      <text x="195" y="152">React 18 · TypeScript · Tailwind</text>
-      <text x="195" y="176">实时仪表盘与速率曲线</text>
-    </g>
-
-    <!-- 引擎 -->
-    <rect x="465" y="80" width="270" height="120" rx="14" fill="#1C2029" stroke="#2E3542"/>
-    <text x="600" y="122">Go 测速引擎</text>
-    <g font-size="13.5" font-weight="400" fill="#96A0B0">
-      <text x="600" y="152">internal/engine · 控制面 / 数据面</text>
-      <text x="600" y="176">选点 · 上下行吞吐 · 时延抖动</text>
-    </g>
-
-    <!-- 节点 -->
-    <rect x="870" y="80" width="270" height="120" rx="14" fill="#1C2029" stroke="#2E3542"/>
-    <text x="1005" y="122">测速节点</text>
-    <g font-size="13.5" font-weight="400" fill="#96A0B0">
-      <text x="1005" y="152">多省市 · 分运营商候选节点</text>
-      <text x="1005" y="176">自动选点 / 手动切换</text>
-    </g>
-
-    <!-- 存储 -->
-    <rect x="465" y="248" width="270" height="58" rx="14" fill="#1C2029" stroke="#2E3542"/>
-    <text x="600" y="274" font-size="17">SQLite 本地存储</text>
-    <text x="600" y="294" font-size="12.5" font-weight="400" fill="#96A0B0">历史记录 · 设置持久化（纯 Go 驱动，无 cgo）</text>
-  </g>
-
-  <!-- 连线：前端 <-> 引擎 -->
-  <g stroke="#5A6473" stroke-width="2" fill="none">
-    <path d="M 330 118 H 465" marker-end="url(#arr)" marker-start="url(#arr)"/>
-    <path d="M 735 118 H 870" marker-end="url(#arr)"/>
-    <path d="M 600 200 V 248" marker-end="url(#arr)"/>
-  </g>
-  <g font-size="12.5" fill="#7C8598" text-anchor="middle">
-    <text x="397" y="106">Wails 事件桥</text>
-    <text x="397" y="144" font-family="ui-monospace, Consolas, monospace" font-size="11.5">bq:progress · bq:sample</text>
-    <text x="802" y="106">HTTPS / TCP</text>
-    <text x="802" y="144">控制面 · 数据面</text>
-    <text x="622" y="228" text-anchor="start">结果入库</text>
-  </g>
+  <rect width="1200" height="340" rx="16" fill="url(#wbg)"/>
 
   <!-- 采样徽标 -->
   <g>
-    <rect x="516" y="30" width="168" height="30" rx="15" fill="none" stroke="#2E3542"/>
-    <circle cx="536" cy="45" r="4" fill="#008C8B"/>
-    <text x="612" y="50" font-size="13" fill="#B9C2CF" text-anchor="middle">500ms 实时采样推送</text>
-    <path d="M 600 60 V 80" stroke="#5A6473" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+    <rect x="519" y="26" width="170" height="30" rx="15" fill="none" stroke="#2E3542"/>
+    <circle cx="539" cy="41" r="4" fill="#008C8B"/>
+    <text x="616" y="46.5" font-size="14.5" fill="#B9C2CF" text-anchor="middle">500ms 采样推送</text>
+    <path d="M 604 56 V 84" stroke="#5A6473" stroke-width="2" fill="none" marker-end="url(#arr)"/>
   </g>
+
+  <!-- 三个主框 -->
+  <g font-size="22" font-weight="600" fill="#F5F7FA" text-anchor="middle">
+    <rect x="64" y="84" width="250" height="126" rx="14" fill="#1C2029" stroke="#2E3542" stroke-width="1.5"/>
+    <text x="189" y="128">React 前端</text>
+    <g font-size="16.5" font-weight="400" fill="#96A0B0">
+      <text x="189" y="162">React 18 · TypeScript · Tailwind</text>
+      <text x="189" y="188">仪表盘 · 曲线 · 历史对比</text>
+    </g>
+
+    <rect x="479" y="84" width="250" height="126" rx="14" fill="#1C2029" stroke="#2E3542" stroke-width="1.5"/>
+    <text x="604" y="128">Go 测速引擎</text>
+    <g font-size="16.5" font-weight="400" fill="#96A0B0">
+      <text x="604" y="162" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="15.5" fill="#7C8598">internal/engine</text>
+      <text x="604" y="188">选点 · 吞吐 · 时延 · 编排</text>
+    </g>
+
+    <rect x="894" y="84" width="250" height="126" rx="14" fill="#1C2029" stroke="#2E3542" stroke-width="1.5"/>
+    <text x="1019" y="128">测速节点</text>
+    <g font-size="16.5" font-weight="400" fill="#96A0B0">
+      <text x="1019" y="162">分省市 · 分运营商候选</text>
+      <text x="1019" y="188">自动择优 / 手动切换</text>
+    </g>
+
+    <!-- 存储 -->
+    <rect x="479" y="258" width="250" height="62" rx="14" fill="#1C2029" stroke="#2E3542" stroke-width="1.5"/>
+    <text x="604" y="284" font-size="18">SQLite 本地存储</text>
+    <text x="604" y="306" font-size="15.5" font-weight="400" fill="#96A0B0">历史与设置 · 纯 Go 驱动</text>
+  </g>
+
+  <!-- 连线 -->
+  <g stroke="#5A6473" stroke-width="2" fill="none">
+    <path d="M 314 120 H 479" marker-end="url(#arr)" marker-start="url(#arr)"/>
+    <path d="M 729 120 H 894" marker-end="url(#arr)"/>
+    <path d="M 604 210 V 258" marker-end="url(#arr)"/>
+  </g>
+  <g font-size="16.5" fill="#B9C2CF" text-anchor="middle">
+    <text x="396.5" y="102">Wails 事件桥</text>
+    <text x="396.5" y="150" font-size="15.5" fill="#7C8598">进程内事件推送</text>
+    <text x="811.5" y="102">HTTPS / TCP</text>
+    <text x="811.5" y="150" font-size="15.5" fill="#7C8598">控制面 · 数据面</text>
+  </g>
+  <text x="618" y="240" font-size="15.5" fill="#7C8598">结果入库</text>
 </svg>
