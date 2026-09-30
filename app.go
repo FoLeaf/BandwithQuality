@@ -98,12 +98,19 @@ func (a *App) StartTest(opts engine.Options) (*engine.TestResult, error) {
 		return nil, err
 	}
 	// 全部地址族都没有产出（节点排队/列表全失败）→ 按失败处理，不写历史
+	// 前端 toast 标题已是「测速失败」，消息本身不再重复该前缀
 	if !resultHasData(res) {
-		msg := "测速失败"
+		msg := ""
 		for _, f := range res.Families {
 			if f.Error != "" {
-				msg += "：" + f.Family + " " + f.Error
+				if msg != "" {
+					msg += "；"
+				}
+				msg += f.Family + " " + f.Error
 			}
+		}
+		if msg == "" {
+			msg = "未获得有效测速数据"
 		}
 		wailsruntime.EventsEmit(a.ctx, "bq:error", msg)
 		return nil, fmt.Errorf("%s", msg)
