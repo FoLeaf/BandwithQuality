@@ -1,5 +1,5 @@
 // 诊断工具：排查特定测速节点不可用问题（仅开发用，不参与 wails 构建）
-// 用法: go run ./cmd/diag [省份 城市 运营商]  默认 江西 赣州 电信
+// 用法: go run ./cmd/diag [省份 城市 运营商]  无参数时自动按当前出口位置诊断
 package main
 
 import (
@@ -45,29 +45,47 @@ func get(raw string, timeout time.Duration) (string, error) {
 }
 
 func main() {
-	prov, city, oper := "江西", "赣州", "电信"
+	prov, city, oper := "", "", ""
 	if len(os.Args) == 4 {
 		prov, city, oper = os.Args[1], os.Args[2], os.Args[3]
 	}
-	fmt.Printf("=== 节点诊断: %s %s %s ===\n", prov, city, oper)
 	fmt.Println("HTTP_PROXY env:", os.Getenv("HTTP_PROXY"), os.Getenv("http_proxy"), os.Getenv("ALL_PROXY"))
 
-	var base string
+	var base, probeBody string
 	for _, b := range ctrlServers {
 		body, err := get(b+"/dataServer/getIpLocSP.php", 6*time.Second)
 		if err != nil {
 			fmt.Printf("[probe] %s → err %v\n", b, err)
 			continue
 		}
-		base = b
+		base, probeBody = b, body
 		fmt.Printf("[probe] %s → %s\n", b, strings.ReplaceAll(strings.TrimSpace(body), "\n", " ")[:min(80, len(strings.TrimSpace(body)))])
 		break
 	}
-
-	ip := ""
-	if body, err := get(base+"/dataServer/getIpLocSP.php", 6*time.Second); err == nil {
-		ip = strings.Split(strings.TrimSpace(body), "|")[0]
+	if base == "" {
+		fmt.Println("[probe] 控制面全部不可达，无法继续")
+		return
 	}
+
+	// getIpLocSP body: ip|["中国","省","市","","运营商"]|3|运营商|port
+	parts := strings.Split(strings.TrimSpace(probeBody), "|")
+	ip := parts[0]
+	if len(os.Args) != 4 {
+		var loc []string
+		if len(parts) > 1 && json.Unmarshal([]byte(parts[1]), &loc) == nil {
+			if len(loc) > 2 {
+				prov, city = loc[1], loc[2]
+			}
+			if len(loc) > 4 {
+				oper = loc[4]
+			}
+		}
+		if oper == "" && len(parts) > 3 {
+			oper = parts[3]
+		}
+		fmt.Printf("[auto] 无参数：按当前出口 %s 自动诊断 → %s %s %s\n", ip, prov, city, oper)
+	}
+	fmt.Printf("\n=== 节点诊断: %s %s %s ===\n", prov, city, oper)
 	v := url.Values{}
 	v.Set("ip", ip)
 	v.Set("network", "4")

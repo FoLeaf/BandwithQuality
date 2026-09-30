@@ -1,7 +1,12 @@
 package engine
 
 import (
+	"context"
+	"fmt"
 	"math"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"runtime"
 	"strings"
@@ -261,5 +266,101 @@ func TestOptionsPreserveExplicitSettings(t *testing.T) {
 	o.fill()
 	if o.LengthS != 5 {
 		t.Fatalf("positive duration must still clamp to minimum: %+v", o)
+	}
+}
+
+func TestOperOrder(t *testing.T) {
+	if got := operOrder("电信"); strings.Join(got, ",") != "电信,联通,移动" {
+		t.Errorf("电信优先次序 = %v", got)
+	}
+	if got := operOrder("移动"); strings.Join(got, ",") != "移动,电信,联通" {
+		t.Errorf("移动优先次序 = %v", got)
+	}
+	// 非主流运营商保留首位，主流三家跟后
+	if got := operOrder("广电"); strings.Join(got, ",") != "广电,电信,联通,移动" {
+		t.Errorf("非主流运营商次序 = %v", got)
+	}
+}
+
+// nodeJSON 构造 mobilematch_many.php 的单节点列表响应。
+func nodeJSON(host, port, name string) string {
+	return fmt.Sprintf(`[{"hostid":"1","pname":"江西","city":"赣州","port":"%s","hostname":"%s","hostip":"%s"}]`, port, name, host)
+}
+
+// deadPort 本机无监听端口：连接立即被拒，可让排队快速失败而不必等超时。
+const deadPort = "1"
+
+func TestSelectAndEnqueueCrossOperFallback(t *testing.T) {
+	// 好节点：dovalid 直接返回成功 body（body[2:] 为 uuid）
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("1|uuid-ok"))
+	}))
+	defer good.Close()
+	goodHost, goodPort, _ := net.SplitHostPort(strings.TrimPrefix(good.URL, "http://"))
+
+	// 控制面：电信给死节点列表，联通给好节点 → 应跨运营商回退成功
+	ctrl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("wifioper") {
+		case "电信":
+			_, _ = w.Write([]byte(nodeJSON("127.0.0.1", deadPort, "赣州电信")))
+		case "联通":
+			_, _ = w.Write([]byte(nodeJSON(goodHost, goodPort, "赣州联通")))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer ctrl.Close()
+
+	var msgs []string
+	cb := Callbacks{OnProgress: func(p Progress) { msgs = append(msgs, p.Message) }}
+	loc := ClientLocation{IP: "1.2.3.4", Province: "江西", City: "赣州", Oper: "电信"}
+	uuid, node, err := selectAndEnqueue(context.Background(), cb, ctrl.URL, loc, false, "TS0123456789ABCDEF", 10)
+	if err != nil {
+		t.Fatalf("跨运营商回退应成功: %v", err)
+	}
+	if uuid != "uuid-ok" {
+		t.Errorf("uuid = %q, want uuid-ok", uuid)
+	}
+	if node == nil || node.Oper != "联通" || node.HostIP != goodHost {
+		t.Errorf("应选中联通好节点, got %+v", node)
+	}
+	joined := strings.Join(msgs, "\n")
+	if !strings.Contains(joined, "尝试联通") {
+		t.Errorf("应有跨运营商提示消息: %v", msgs)
+	}
+}
+
+func TestSelectAndEnqueueSameOper(t *testing.T) {
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("1|uuid-ok"))
+	}))
+	defer good.Close()
+	goodHost, goodPort, _ := net.SplitHostPort(strings.TrimPrefix(good.URL, "http://"))
+
+	ctrl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(nodeJSON(goodHost, goodPort, "赣州电信")))
+	}))
+	defer ctrl.Close()
+
+	loc := ClientLocation{IP: "1.2.3.4", Province: "江西", City: "赣州", Oper: "电信"}
+	uuid, node, err := selectAndEnqueue(context.Background(), Callbacks{}, ctrl.URL, loc, false, "TS0123456789ABCDEF", 10)
+	if err != nil || uuid != "uuid-ok" || node == nil || node.Oper != "电信" {
+		t.Fatalf("同运营商应直接成功: uuid=%q node=%+v err=%v", uuid, node, err)
+	}
+}
+
+func TestSelectAndEnqueueAllOperFail(t *testing.T) {
+	ctrl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(nodeJSON("127.0.0.1", deadPort, "节点")))
+	}))
+	defer ctrl.Close()
+
+	loc := ClientLocation{IP: "1.2.3.4", Province: "江西", City: "赣州", Oper: "电信"}
+	_, _, err := selectAndEnqueue(context.Background(), Callbacks{}, ctrl.URL, loc, false, "TS0123456789ABCDEF", 10)
+	if err == nil {
+		t.Fatal("全部运营商失败应报错")
+	}
+	if !strings.Contains(err.Error(), "已依次尝试 电信、联通、移动") {
+		t.Errorf("错误应说明尝试过的运营商: %v", err)
 	}
 }

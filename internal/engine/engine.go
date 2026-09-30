@@ -206,6 +206,66 @@ func enqueueWithFallback(ctx context.Context, nodes []Node, primary *Node, imei 
 	return "", nil, fmt.Errorf("节点排队失败：已尝试 %d 个节点均未成功（%s），上游排队服务可能暂时不稳定，请稍后重试或手动更换节点", len(tried), shortEnqueueErr(lastErr))
 }
 
+// 主流运营商兜底次序：同运营商优先，之后跨运营商
+// （家宽所在运营商的节点池可能集体不可用；跨网测速受互联瓶颈影响，结果可能偏低）。
+var operFallbackOrder = []string{"电信", "联通", "移动"}
+
+// operOrder 同运营商在首位，其余按固定次序跟随；非主流运营商（广电等）也保留在首位。
+func operOrder(prefer string) []string {
+	out := []string{prefer}
+	for _, o := range operFallbackOrder {
+		if o != prefer {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// selectAndEnqueue 自动选点并排队：先按出口运营商取列表，列表空/不可达/排队全灭时
+// 依次换其他运营商节点池重试。返回排上队的节点（uuid 供后续数据面使用）。
+func selectAndEnqueue(ctx context.Context, cb Callbacks, base string, loc ClientLocation, v6 bool, imei string, pct float64) (string, *Node, error) {
+	var triedOpers []string
+	lastErr := error(nil)
+	for _, oper := range operOrder(loc.Oper) {
+		if ctx.Err() != nil {
+			return "", nil, ctx.Err()
+		}
+		triedOpers = append(triedOpers, oper)
+		if oper != loc.Oper {
+			emit(cb, "nodes", fmt.Sprintf("%s节点不可用，尝试%s节点（跨运营商，速率可能偏低）…", loc.Oper, oper), pct)
+		}
+		nodes, err := matchServers(base, loc.IP, loc.Province, loc.City, oper, v6)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if len(nodes) == 0 {
+			lastErr = fmt.Errorf("%s 无可用节点", oper)
+			continue
+		}
+		cand := pickNode(nodes, loc.Province, loc.City, oper, tcpOK)
+		if cand == nil {
+			lastErr = fmt.Errorf("%s 无可用节点", oper)
+			continue
+		}
+		if oper == loc.Oper {
+			emit(cb, "select", fmt.Sprintf("为你选择了：%s ×%s", cand.DisplayName(), shortIP(cand.HostIP)), pct)
+		}
+		uuid, chosen, err := enqueueWithFallback(ctx, nodes, cand, imei)
+		if err == nil {
+			return uuid, chosen, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("无可用节点")
+	}
+	if len(triedOpers) > 1 {
+		lastErr = fmt.Errorf("%w；已依次尝试 %s 的节点", lastErr, strings.Join(triedOpers, "、"))
+	}
+	return "", nil, lastErr
+}
+
 // RunTest 执行一次完整测速：出口探测 → 选点 → 排队 → 时延 → 各阶段吞吐 → 退队。
 // opts.Node 非 nil 时 IPv4 轮使用该节点（IPv6 轮仍自动择优）；
 // opts.Family 决定地址族：v4 仅 IPv4，v6 仅 IPv6（无 v6 出口直接报错），
@@ -261,37 +321,29 @@ func RunTest(ctx context.Context, opts Options, cb Callbacks) (*TestResult, erro
 		fr := &result.Families[fi]
 		phaseBase := float64(fi) * span * float64(len(phases))
 
-		var nodes []Node
 		var node *Node
+		var uuid string
 		// 手动指定节点只作用于 IPv4 轮（选点列表来自 v4 接口，v6 轮仍自动择优）
 		if fi == 0 && opts.Node != nil && !f.v6 {
 			node = opts.Node
-		} else {
-			emit(cb, "nodes", "获取节点列表…", phaseBase+span*0.1)
+			emit(cb, "select", fmt.Sprintf("为你选择了：%s ×%s", node.DisplayName(), shortIP(node.HostIP)), phaseBase+span*0.2)
 			var err error
-			nodes, err = matchServers(base, loc.IP, loc.Province, loc.City, loc.Oper, f.v6)
+			uuid, node, err = enqueueWithFallback(ctx, nil, node, imei)
 			if err != nil {
 				fr.Error = err.Error()
 				continue
 			}
-			if len(nodes) == 0 {
-				fr.Error = "无可用节点"
+		} else {
+			emit(cb, "nodes", "获取节点列表…", phaseBase+span*0.1)
+			var err error
+			uuid, node, err = selectAndEnqueue(ctx, cb, base, loc, f.v6, imei, phaseBase+span*0.2)
+			if err != nil {
+				fr.Error = err.Error()
 				continue
 			}
-			node = pickNode(nodes, loc.Province, loc.City, loc.Oper, tcpOK)
-		}
-		emit(cb, "select", fmt.Sprintf("为你选择了：%s ×%s", node.DisplayName(), shortIP(node.HostIP)), phaseBase+span*0.2)
-
-		uuid, chosen, err := enqueueWithFallback(ctx, nodes, node, imei)
-		if err != nil {
-			fr.Error = err.Error()
-			continue
-		}
-		node = chosen
-		fr.Node = node
-		if fi != 0 || opts.Node == nil {
 			emit(cb, "select", fmt.Sprintf("为你选择了：%s ×%s", node.DisplayName(), shortIP(node.HostIP)), phaseBase+span*0.25)
 		}
+		fr.Node = node
 		func() {
 			defer dequeue(*node, uuid)
 
